@@ -1091,6 +1091,19 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
 
 
 # --- 6. KURUMSAL DİNAMİK ATR, KALDIRAÇ VE İŞLEM GÜCÜ KAZANÇ MOTORU ---
+
+# Zaman dilimine gore, BTC referans fiyatina (~$77.200) gore kalibre edilmis, fiyata ORANTILI
+# (yuzde bazli) SL/TP mesafe sinirlari. Yuzde bazli oldugu icin herhangi bir coinde (ucuz veya
+# pahali farketmeksizin) esdeger sikilikte, mantikli bir mesafe uretir - sabit dolar deger
+# kullanilsaydi ucuz coinlerde (orn. PEPE) anlamsiz/imkansiz sonuclar cikardi. Bu tablo
+# pages/2_Analiz_Tahmini.py'deki ayni isimli tabloyla senkron tutulmalidir.
+TIMEFRAME_RISK_BOUNDS_PCT = {
+    "Min1":   {"sl_min": 0.00259, "sl_max": 0.00518, "tp_min": 0.00389, "tp_max": 0.00648},
+    "Min15":  {"sl_min": 0.00389, "sl_max": 0.00648, "tp_min": 0.00648, "tp_max": 0.01295},
+    "Min60":  {"sl_min": 0.01295, "sl_max": 0.01943, "tp_min": 0.01295, "tp_max": 0.01943},
+    "Min240": {"sl_min": 0.01295, "sl_max": 0.01943, "tp_min": 0.01295, "tp_max": 0.01943},
+}
+
 def compute_institutional_risk_levels(
     current_price: float,
     atr: float,
@@ -1099,7 +1112,8 @@ def compute_institutional_risk_levels(
     margin_budget: float = 100.0,
     confidence: float = 65.0,
     confluence_score: float = 70.0,
-    sr_levels: dict = None
+    sr_levels: dict = None,
+    interval: str = ""
 ) -> dict:
     """Yapay zekâ işlem gücüne, kaldıraca, majör destek/direnç seviyelerine ve kullanıcı bütçesine göre Min Kazanç, Max Kazanç ve Orantılı SL seviyelerini hesaplar."""
     if current_price <= 0:
@@ -1132,6 +1146,17 @@ def compute_institutional_risk_levels(
     # 3. Kesin Orantılı Risk-Ödül Oranı (Minimum TP1 = 1.8 * SL, TP2 = 3.5 * SL)
     min_tp_dist = sl_dist * 1.8
     max_tp_dist = sl_dist * 3.5
+
+    # ONEMLI: Yukarida hesaplanan sl_dist, "majör destek/direnç" seviyesine gore genisletilmis
+    # olabilir (swing mantigi); bu, kisa zaman dilimlerinde (orn. 1 dakika scalp) fiyattan
+    # binlerce dolar uzakta, anlamsiz genis bir SL/TP uretiyordu. Zaman dilimine ozel yuzde
+    # bazli sinir tanimliysa, mesafe bu araligin KESINLIKLE disina cikamaz.
+    tf_bounds = TIMEFRAME_RISK_BOUNDS_PCT.get(interval)
+    if tf_bounds:
+        sl_dist = float(np.clip(sl_dist, current_price * tf_bounds["sl_min"], current_price * tf_bounds["sl_max"]))
+        min_tp_dist = float(np.clip(min_tp_dist, current_price * tf_bounds["tp_min"], current_price * tf_bounds["tp_max"]))
+        max_tp_dist = float(np.clip(max_tp_dist, current_price * tf_bounds["tp_min"], current_price * tf_bounds["tp_max"]))
+
     liq_dist_pct = (0.90 / lev) * 100.0
     
     if "LONG" in signal:
@@ -1424,7 +1449,8 @@ def render_quantum_terminal():
         margin_budget=margin_budget,
         confidence=confluence["confidence"],
         confluence_score=confluence["confluence_score"],
-        sr_levels=sr_levels
+        sr_levels=sr_levels,
+        interval=active_interval
     )
     
     # Fiyat Formatlama Yardımcısı

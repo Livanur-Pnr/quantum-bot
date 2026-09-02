@@ -273,7 +273,27 @@ def _cached_train_quantum_ai(symbol_tf: str, _train_df: pd.DataFrame, _feature_c
 
     return ensemble, final_features
 
-def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float, tp_m: float, sl_m: float):
+# Zaman dilimine gore, BTC referans fiyatina (~$77.200) gore kalibre edilmis, fiyata ORANTILI
+# (yuzde bazli) SL/TP mesafe sinirlari. Yuzde bazli oldugu icin herhangi bir coinde (ucuz veya
+# pahali farketmeksizin) esdeger sikilikte, mantikli bir mesafe uretir - sabit dolar deger
+# kullanilsaydi ucuz coinlerde (orn. PEPE) anlamsiz/imkansiz sonuclar cikardi.
+TIMEFRAME_RISK_BOUNDS_PCT = {
+    "1m":  {"sl_min": 0.00259, "sl_max": 0.00518, "tp_min": 0.00389, "tp_max": 0.00648},
+    "15m": {"sl_min": 0.00389, "sl_max": 0.00648, "tp_min": 0.00648, "tp_max": 0.01295},
+    "1h":  {"sl_min": 0.01295, "sl_max": 0.01943, "tp_min": 0.01295, "tp_max": 0.01943},
+    "4h":  {"sl_min": 0.01295, "sl_max": 0.01943, "tp_min": 0.01295, "tp_max": 0.01943},
+}
+
+def clamp_tp_sl_dist(raw_dist: float, price: float, timeframe: str, kind: str) -> float:
+    """raw_dist (ATR*carpan mesafesi), zaman dilimine gore tanimli fiyata orantili sinirin
+    disina KESINLIKLE cikamaz. kind: 'tp' veya 'sl'."""
+    bounds = TIMEFRAME_RISK_BOUNDS_PCT.get(timeframe)
+    if not bounds:
+        return raw_dist
+    lo, hi = (bounds["tp_min"], bounds["tp_max"]) if kind == "tp" else (bounds["sl_min"], bounds["sl_max"])
+    return float(np.clip(raw_dist, price * lo, price * hi))
+
+def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float, tp_m: float, sl_m: float, timeframe: str = ""):
     """
     Yapay Zeka Botu ile %100 Senkronize Edilmis ML Motoru
     """
@@ -311,11 +331,24 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
         
     targets = np.zeros(len(df))
     closes, highs, lows, atrs = df['close'].values, df['high'].values, df['low'].values, df['atr'].values
-    
+
+    # ONEMLI: Ham "atr * carpan" mesafesi, zaman dilimine gore anlamsiz sekilde genis
+    # (ornegin 1 dakikalik veride binlerce dolarlik SL/TP) cikabiliyordu. Zaman dilimine ozel
+    # yuzde bazli sinirlar tanimliysa, mesafe bu araligin disina KESINLIKLE cikamaz.
+    tf_bounds = TIMEFRAME_RISK_BOUNDS_PCT.get(timeframe)
+    raw_tp_dist = atrs * tp_m
+    raw_sl_dist = atrs * sl_m
+    if tf_bounds:
+        tp_dist_arr = np.clip(raw_tp_dist, closes * tf_bounds["tp_min"], closes * tf_bounds["tp_max"])
+        sl_dist_arr = np.clip(raw_sl_dist, closes * tf_bounds["sl_min"], closes * tf_bounds["sl_max"])
+    else:
+        tp_dist_arr = raw_tp_dist
+        sl_dist_arr = raw_sl_dist
+
     for i in range(len(df) - target_candles):
         entry = closes[i]
-        tp_long, sl_long = entry + (atrs[i] * tp_m), entry - (atrs[i] * sl_m)
-        tp_short, sl_short = entry - (atrs[i] * tp_m), entry + (atrs[i] * sl_m)
+        tp_long, sl_long = entry + tp_dist_arr[i], entry - sl_dist_arr[i]
+        tp_short, sl_short = entry - tp_dist_arr[i], entry + sl_dist_arr[i]
         
         l_suc, s_suc = False, False
         for j in range(i + 1, i + 1 + target_candles):
@@ -368,9 +401,9 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
             
         if not in_pos:
             if df['prob_long'].iloc[i] > (threshold * 100):
-                in_pos, pos_type, tp, sl = True, 'LONG', df['close'].iloc[i] + (df['atr'].iloc[i] * tp_m), df['close'].iloc[i] - (df['atr'].iloc[i] * sl_m)
+                in_pos, pos_type, tp, sl = True, 'LONG', df['close'].iloc[i] + tp_dist_arr[i], df['close'].iloc[i] - sl_dist_arr[i]
             elif df['prob_short'].iloc[i] > (threshold * 100):
-                in_pos, pos_type, tp, sl = True, 'SHORT', df['close'].iloc[i] - (df['atr'].iloc[i] * tp_m), df['close'].iloc[i] + (df['atr'].iloc[i] * sl_m)
+                in_pos, pos_type, tp, sl = True, 'SHORT', df['close'].iloc[i] - tp_dist_arr[i], df['close'].iloc[i] + sl_dist_arr[i]
                 
         ai_signals.append(pos_type if in_pos else 'NONE')
         trade_status.append('IN_TRADE' if in_pos else 'IDLE')
@@ -383,7 +416,7 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
 
 def format_price(p): return f"{p:.4f}" if p < 10 else f"{p:.2f}"
 
-def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: float) -> go.Figure:
+def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: float, timeframe: str = "") -> go.Figure:
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], increasing_line_color="#22ab94", decreasing_line_color="#f7525f", increasing_fillcolor="#22ab94", decreasing_fillcolor="#f7525f", name="Fiyat"), row=1, col=1)
     fig.add_trace(go.Scattergl(x=df.index, y=df['prob_long'], mode='lines', line=dict(color='#22ab94', width=2), name='LONG %', fill='tozeroy', fillcolor='rgba(34, 171, 148, 0.1)'), row=2, col=1)
@@ -406,8 +439,10 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     live_prob, live_dir = (last["prob_long"], "LONG") if is_long else (last["prob_short"], "SHORT")
     color = "#22ab94" if is_long else "#f7525f"
     last_price = last['close']
-    live_tp = last_price + (last['atr'] * tp_m) if is_long else last_price - (last['atr'] * tp_m)
-    live_sl = last_price - (last['atr'] * sl_m) if is_long else last_price + (last['atr'] * sl_m)
+    live_tp_dist = clamp_tp_sl_dist(last['atr'] * tp_m, last_price, timeframe, "tp")
+    live_sl_dist = clamp_tp_sl_dist(last['atr'] * sl_m, last_price, timeframe, "sl")
+    live_tp = last_price + live_tp_dist if is_long else last_price - live_tp_dist
+    live_sl = last_price - live_sl_dist if is_long else last_price + live_sl_dist
     
     if live_prob >= threshold:
         label_text = f"<b>⚡ CANLI SİNYAL: {'LONG' if is_long else 'SHORT'}</b><br><b>%{live_prob:.1f} GÜVEN</b>"
@@ -433,7 +468,7 @@ def main():
     with st.sidebar:
         st.markdown("## 🎯 SWING AI AYARLARI")
         symbol = st.selectbox("🪙 Coin", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"])
-        tf = st.selectbox("⏱️ Z. Dilimi", ["5m", "15m", "30m", "1h", "4h", "1d"], index=1)
+        tf = st.selectbox("⏱️ Z. Dilimi", ["15m", "30m", "1h", "4h", "1d"], index=0)
         
         with st.expander("🛠️ Kurumsal ML & Risk Parametreleri", expanded=False):
             target_candles = st.slider("Hedef Süre (Mum)", 10, 50, 20, 5)
@@ -480,7 +515,7 @@ def main():
             df['dxy'] = df['dxy'].ffill().fillna(100.0)
             df.drop(columns=['date_str'], inplace=True, errors='ignore')
     
-            df, train_acc, active_features = train_and_predict_ai(df, target_candles, ai_threshold, tp_m, sl_m)
+            df, train_acc, active_features = train_and_predict_ai(df, target_candles, ai_threshold, tp_m, sl_m, timeframe=tf)
     
         last, last_price, atr = df.iloc[-1], df.iloc[-1]['close'], df.iloc[-1]['atr']
         
@@ -515,8 +550,10 @@ def main():
         is_long = last["prob_long"] > last["prob_short"]
         live_prob, live_dir = (last["prob_long"], "LONG") if is_long else (last["prob_short"], "SHORT")
         live_color = "#22ab94" if is_long else "#f7525f"
-        live_tp = last_price + (atr * tp_m) if is_long else last_price - (atr * tp_m)
-        live_sl = last_price - (atr * sl_m) if is_long else last_price + (atr * sl_m)
+        live_tp_dist = clamp_tp_sl_dist(atr * tp_m, last_price, tf, "tp")
+        live_sl_dist = clamp_tp_sl_dist(atr * sl_m, last_price, tf, "sl")
+        live_tp = last_price + live_tp_dist if is_long else last_price - live_tp_dist
+        live_sl = last_price - live_sl_dist if is_long else last_price + live_sl_dist
     
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.markdown(f'<div class="metric-card"><h4>💰 {symbol} FİYAT</h4><p class="value white">${last_price:,.4f}</p></div>', unsafe_allow_html=True)
@@ -542,7 +579,7 @@ def main():
                 <p style="color:#5d606b; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p></div>'''
         st.markdown(stat_html, unsafe_allow_html=True)
     
-        fig = build_realtime_chart(df.tail(300).copy(), ai_threshold, tp_m, sl_m)
+        fig = build_realtime_chart(df.tail(300).copy(), ai_threshold, tp_m, sl_m, timeframe=tf)
         st.plotly_chart(fig, use_container_width=True, height=850, config={'displayModeBar': False, 'scrollZoom': True})
     
     render_classic_terminal()
