@@ -87,13 +87,16 @@ def fetch_macro_data() -> tuple:
     return fg_df, dxy_df, spy_df
 
 
-def load_env_credentials() -> dict:
+def load_env_credentials(exchange_id: str = "mexc") -> dict:
+    """.env dosyasindan ve yedek metin dosyalarindan secilen borsaya ait API anahtarlarini
+    yukler. Degisken adlari borsa onekiyle aranir (orn. MEXC_API_KEY veya BINANCE_API_KEY)."""
     # Proje kök dizini: bu dosya pages/ altinda oldugu icin bir ust klasore cikilir.
     project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     load_dotenv(os.path.join(project_dir, ".env"))
 
-    api_key = os.getenv("MEXC_API_KEY", "").strip()
-    secret_key = os.getenv("MEXC_SECRET_KEY", "").strip()
+    prefix = exchange_id.upper()
+    api_key = os.getenv(f"{prefix}_API_KEY", "").strip()
+    secret_key = os.getenv(f"{prefix}_SECRET_KEY", "").strip()
 
     possible_files = ["MEXC API ADRESLERİ.txt", "mexc_api.txt", "api_key.txt", "keys.txt"]
 
@@ -110,41 +113,49 @@ def load_env_credentials() -> dict:
                             k_upper = k.strip().upper().replace(" ", "_")
                             val = v.strip().strip("'").strip('"')
                             if val:
-                                if k_upper in ["MEXC_API_KEY", "MEXC_ACCESS_KEY", "API_KEY", "ACCESS_KEY"]:
+                                if k_upper in [f"{prefix}_API_KEY", f"{prefix}_ACCESS_KEY", "API_KEY", "ACCESS_KEY"]:
                                     if not api_key: api_key = val
-                                elif k_upper in ["MEXC_SECRET_KEY", "SECRET_KEY"]:
+                                elif k_upper in [f"{prefix}_SECRET_KEY", "SECRET_KEY"]:
                                     if not secret_key: secret_key = val
             except Exception:
                 pass
-    if api_key: os.environ["MEXC_API_KEY"] = api_key
-    if secret_key: os.environ["MEXC_SECRET_KEY"] = secret_key
+    if api_key: os.environ[f"{prefix}_API_KEY"] = api_key
+    if secret_key: os.environ[f"{prefix}_SECRET_KEY"] = secret_key
     return {"api_key": api_key, "secret_key": secret_key}
 
-load_env_credentials()
+# Desteklenen borsalar: MEXC (varsayilan) ve Binance. Ikisi de ccxt-unified ayni sozlesme
+# sembol formatini ("BASE/USDT:USDT") ve ayni kimlik dogrulama alanlarini (sadece apiKey+secret,
+# ekstra passphrase gerekmiyor) kullaniyor - test edip dogruladim. Farkli bir borsa eklenecekse
+# once ccxt uzerinden requiredCredentials ve sembol formati kontrol edilmeli.
+SUPPORTED_EXCHANGES = {"MEXC": "mexc", "Binance": "binance"}
 
 @st.cache_resource(ttl=1800, show_spinner=False)
-def get_public_mexc_client():
+def get_public_exchange_client(exchange_id: str = "mexc"):
     """Herhangi bir API anahtari gerektirmeyen (genel/public) veri cekimleri icin TEK, paylasilan
-    ve piyasa listesi onceden yuklenmis MEXC istemcisi.
+    ve piyasa listesi onceden yuklenmis borsa istemcisi. exchange_id'ye gore ayri ayri
+    onbelleklenir (orn. 'mexc' ve 'binance' icin farkli istemci nesneleri saklanir).
 
     ONEMLI PERFORMANS NOTU: ccxt her create_order/fetch_ohlcv/fetch_ticker/... cagrisinda,
     eger o istemcinin market listesi (self.markets) yuklu degilse otomatik olarak load_markets()
-    calistirir; bu tek seferde ~3000 spot+vadeli sozlesmeyi indirip parse eder. Eskiden neredeyse
-    her fonksiyon kendi taze ccxt.mexc() nesnesini olusturuyordu; bu da 3-5 saniyede bir calisan
+    calistirir; bu tek seferde binlerce spot+vadeli sozlesmeyi indirip parse eder. Eskiden neredeyse
+    her fonksiyon kendi taze ccxt nesnesini olusturuyordu; bu da 3-5 saniyede bir calisan
     canli terminalde HER YENILEMEDE birden fazla kez bu agir load_markets() indirmesinin tekrar
     tekrar yapilmasina (ve panelin cok yavas/gec yuklenmesine) sebep oluyordu. Artik tum genel
     fonksiyonlar bu tek, onbelleklenmis istemciyi paylasiyor.
     """
-    ex = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+    klass = getattr(ccxt, exchange_id)
+    ex = klass({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
     ex.load_markets()
     return ex
 
 
 @st.cache_resource(ttl=1800, show_spinner=False)
-def get_mexc_ccxt_client(api_key="", secret_key=""):
-    key = api_key or os.getenv("MEXC_API_KEY", "")
-    sec = secret_key or os.getenv("MEXC_SECRET_KEY", "")
-    ex = ccxt.mexc({
+def get_exchange_client(exchange_id: str, api_key: str = "", secret_key: str = ""):
+    prefix = exchange_id.upper()
+    key = api_key or os.getenv(f"{prefix}_API_KEY", "")
+    sec = secret_key or os.getenv(f"{prefix}_SECRET_KEY", "")
+    klass = getattr(ccxt, exchange_id)
+    ex = klass({
         'apiKey': key,
         'secret': sec,
         'enableRateLimit': True,
@@ -154,29 +165,30 @@ def get_mexc_ccxt_client(api_key="", secret_key=""):
     return ex
 
 @st.cache_data(ttl=5, show_spinner=False)
-def fetch_binance_account_balance(api_key: str = "", secret_key: str = "") -> dict:
-    # İsmi aynı bırakıyoruz, içi MEXC
+def fetch_binance_account_balance(exchange_id: str = "mexc", api_key: str = "", secret_key: str = "") -> dict:
     try:
-        ex = get_mexc_ccxt_client(api_key, secret_key)
+        ex = get_exchange_client(exchange_id, api_key, secret_key)
         bal = ex.fetch_balance()
         usdt_bal = bal.get('USDT', {})
         total = usdt_bal.get('total', 0.0)
         free = usdt_bal.get('free', 0.0)
-        return {"status": "FUTURES_OK", "wallet_balance": total, "available_balance": free, "type": "MEXC Vadeli (Swap)"}
+        ex_label = [k for k, v in SUPPORTED_EXCHANGES.items() if v == exchange_id]
+        ex_label = ex_label[0] if ex_label else exchange_id.upper()
+        return {"status": "FUTURES_OK", "wallet_balance": total, "available_balance": free, "type": f"{ex_label} Vadeli (Swap)"}
     except Exception as e:
         return {"status": "ERROR", "msg": str(e)}
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def get_all_binance_futures_symbols() -> tuple:
+def get_all_binance_futures_symbols(exchange_id: str = "mexc") -> tuple:
     try:
-        ex = get_public_mexc_client()
+        ex = get_public_exchange_client(exchange_id)
         markets = ex.markets
         symbols = []
         symbol_map = {}
         for sym, m in markets.items():
-            # ONEMLI: ccxt-mexc load_markets() spot VE swap piyasalarini birlikte dondurur.
+            # ONEMLI: ccxt load_markets() cogu borsada spot VE swap piyasalarini birlikte dondurur.
             # 'swap' filtresi olmadan spot semboller (orn. BTC/USDT) de listeye karisir ve
-            # secildiginde bot MEXC Vadeli fiyati yerine yanlislikla Spot fiyatini gosterir/kullanir.
+            # secildiginde bot Vadeli fiyati yerine yanlislikla Spot fiyatini gosterir/kullanir.
             if m.get('swap') and m['active'] and m['quote'] == 'USDT':
                 symbols.append(sym)
                 base = m['base']
@@ -188,29 +200,30 @@ def get_all_binance_futures_symbols() -> tuple:
     except Exception:
         return ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT", "XRP/USDT:USDT"], {}
 
-def normalize_futures_symbol(user_input: str) -> tuple:
-    all_symbols, symbol_map = get_all_binance_futures_symbols()
+def normalize_futures_symbol(user_input: str, exchange_id: str = "mexc") -> tuple:
+    all_symbols, symbol_map = get_all_binance_futures_symbols(exchange_id)
+    ex_label = next((k for k, v in SUPPORTED_EXCHANGES.items() if v == exchange_id), exchange_id.upper())
     text = user_input.strip().upper().replace(" ", "").replace("_", "").replace("-", "")
 
     if text in all_symbols:
         return text, ""
 
     # "BTC/USDT" gibi spot gorunumlu (":USDT" vadeli sonekini icermeyen) girisleri
-    # yanlislikla Spot fiyatini kullanmamak icin MEXC Vadeli karsiligina cevir.
+    # yanlislikla Spot fiyatini kullanmamak icin secili borsanin Vadeli karsiligina cevir.
     if "/" in text and ":" not in text:
         base = text.split("/")[0]
         if base in symbol_map:
-            return symbol_map[base], f" MEXC Vadeli Eşleşti: {symbol_map[base]}"
+            return symbol_map[base], f" {ex_label} Vadeli Eşleşti: {symbol_map[base]}"
         sym = f"{base}/USDT:USDT"
         if sym in all_symbols:
-            return sym, f" MEXC Vadeli Eşleşti: {sym}"
+            return sym, f" {ex_label} Vadeli Eşleşti: {sym}"
 
     if "/" not in text and ":" not in text:
         clean = text.replace("USDT", "")
         if clean in symbol_map:
-            return symbol_map[clean], f" MEXC Eşleşti: {symbol_map[clean]}"
+            return symbol_map[clean], f" {ex_label} Eşleşti: {symbol_map[clean]}"
         sym = f"{clean}/USDT:USDT"
-        if sym in all_symbols: return sym, f" MEXC Eşleşti: {sym}"
+        if sym in all_symbols: return sym, f" {ex_label} Eşleşti: {sym}"
         import difflib
         matches = difflib.get_close_matches(sym, all_symbols, n=1, cutoff=0.5)
         if matches: return matches[0], f"💡 Yakın Eşleşme: {matches[0]}"
@@ -220,9 +233,9 @@ def normalize_futures_symbol(user_input: str) -> tuple:
 INTERVAL_MAP = {"Min1": "1m", "Min5": "5m", "Min15": "15m", "Min60": "1h", "Min240": "4h"}
 
 @st.cache_data(ttl=3, show_spinner=False)
-def fetch_binance_kline_data(symbol: str, interval: str = "Min1", limit: int = 500) -> pd.DataFrame:
+def fetch_binance_kline_data(symbol: str, interval: str = "Min1", limit: int = 500, exchange_id: str = "mexc") -> pd.DataFrame:
     try:
-        ex = get_public_mexc_client()
+        ex = get_public_exchange_client(exchange_id)
         api_interval = INTERVAL_MAP.get(interval, "1m")
         ohlcv = ex.fetch_ohlcv(symbol, api_interval, limit=limit)
         
@@ -248,9 +261,9 @@ def fetch_binance_kline_data(symbol: str, interval: str = "Min1", limit: int = 5
     return pd.DataFrame()
 
 @st.cache_data(ttl=3, show_spinner=False)
-def fetch_binance_ticker_details(symbol: str) -> dict:
+def fetch_binance_ticker_details(symbol: str, exchange_id: str = "mexc") -> dict:
     try:
-        ex = get_public_mexc_client()
+        ex = get_public_exchange_client(exchange_id)
         ticker = ex.fetch_ticker(symbol)
         funding = ex.fetch_funding_rate(symbol) if ex.has['fetchFundingRate'] else {}
         return {
@@ -266,9 +279,9 @@ def fetch_binance_ticker_details(symbol: str) -> dict:
         return {}
 
 @st.cache_data(ttl=3, show_spinner=False)
-def fetch_binance_depth_imbalance(symbol: str) -> dict:
+def fetch_binance_depth_imbalance(symbol: str, exchange_id: str = "mexc") -> dict:
     try:
-        ex = get_public_mexc_client()
+        ex = get_public_exchange_client(exchange_id)
         ob = ex.fetch_order_book(symbol, limit=20)
         bid_vol = sum([b[1] for b in ob['bids']])
         ask_vol = sum([a[1] for a in ob['asks']])
@@ -284,9 +297,9 @@ def fetch_binance_depth_imbalance(symbol: str) -> dict:
         return {"bid_ratio": 50.0, "ask_ratio": 50.0, "imbalance": 0.0, "bias": "DENGELİ"}
 
 @st.cache_data(ttl=5, show_spinner=False)
-def fetch_institutional_order_flow(symbol: str, timeframe: str = "5m", limit: int = 150) -> pd.DataFrame:
+def fetch_institutional_order_flow(symbol: str, timeframe: str = "5m", limit: int = 150, exchange_id: str = "mexc") -> pd.DataFrame:
     try:
-        ex = get_public_mexc_client()
+        ex = get_public_exchange_client(exchange_id)
         api_interval = INTERVAL_MAP.get(timeframe, "5m")
         ohlcv = ex.fetch_ohlcv(symbol, api_interval, limit=limit)
         if not ohlcv: return pd.DataFrame()
@@ -448,18 +461,18 @@ def compute_liquidation_clusters(df: pd.DataFrame, current_price: float) -> dict
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def compute_macro_support_resistance_levels(df: pd.DataFrame, symbol: str = "BTCUSDT") -> dict:
+def compute_macro_support_resistance_levels(df: pd.DataFrame, symbol: str = "BTCUSDT", exchange_id: str = "mexc") -> dict:
     """Uzun vadeli kalıcı majör S/R seviyeleri için 1D (Günlük) Hacim Profili (VRVP)
     ve Yapısal Pivot ekstrem noktalarını (Swing High/Low) hesaplar."""
     if len(df) < 5:
         return {}
-        
+
     current_price = float(df['close'].iloc[-1])
     recent_close = float(df['close'].iloc[-2]) if len(df) > 1 else current_price
-    
+
     # 1D Makro veriyi çek (Son 180 Günlük Hacim Profili için)
     try:
-        _ex = get_public_mexc_client()
+        _ex = get_public_exchange_client(exchange_id)
         ohlcv_1d = _ex.fetch_ohlcv(symbol, '1d', limit=180)
         if ohlcv_1d:
             df_1d = pd.DataFrame(ohlcv_1d, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
@@ -556,10 +569,10 @@ def compute_macro_support_resistance_levels(df: pd.DataFrame, symbol: str = "BTC
     }
 
 @st.cache_data(ttl=60, show_spinner=False)
-def compute_macro_timeframe_trend(symbol: str = "BTCUSDT") -> dict:
+def compute_macro_timeframe_trend(symbol: str = "BTCUSDT", exchange_id: str = "mexc") -> dict:
     """4 Saatlik (4h) ve Günlük (1d) zaman dilimlerindeki makro trend yönünü hesaplar."""
     try:
-        _ex = get_public_mexc_client()
+        _ex = get_public_exchange_client(exchange_id)
         ohlcv_4h = _ex.fetch_ohlcv(symbol, '4h', limit=100)
         if ohlcv_4h:
             c4 = pd.Series([float(row[4]) for row in ohlcv_4h])
@@ -599,12 +612,12 @@ def compute_macro_timeframe_trend(symbol: str = "BTCUSDT") -> dict:
 
 
 @st.cache_data(ttl=60, show_spinner=False)
-def compute_4h_scalp_prediction(symbol: str = "BTCUSDT") -> dict:
+def compute_4h_scalp_prediction(symbol: str = "BTCUSDT", exchange_id: str = "mexc") -> dict:
     """4 Saatlik (4H) grafik verileri üzerinden uzun vadeli trend yönünü ve AI tahminini hesaplar."""
     try:
-        df_4h = fetch_binance_kline_data(symbol, interval="Min240", limit=100)
+        df_4h = fetch_binance_kline_data(symbol, interval="Min240", limit=100, exchange_id=exchange_id)
         if not df_4h.empty and len(df_4h) >= 30:
-            df_feat = compute_quantum_features(df_4h, symbol=symbol, interval="Min240")
+            df_feat = compute_quantum_features(df_4h, symbol=symbol, interval="Min240", exchange_id=exchange_id)
             ai_4h = train_and_predict_quantum_ai(df_feat)
             
             last_c = float(df_4h['close'].iloc[-1])
@@ -651,7 +664,7 @@ def compute_4h_scalp_prediction(symbol: str = "BTCUSDT") -> dict:
 
 
 # --- 3. ÇOK BOYUTLU KANTİTATİF ÖZELLİK MÜHENDİSLİĞİ (FEATURE ENGINEERING) ---
-def compute_quantum_features(df_raw: pd.DataFrame, symbol: str = "BTCUSDT", interval: str = "5m") -> pd.DataFrame:
+def compute_quantum_features(df_raw: pd.DataFrame, symbol: str = "BTCUSDT", interval: str = "5m", exchange_id: str = "mexc") -> pd.DataFrame:
     """Gerçek mum verileri üzerinden kurumsal teknik indikatörler ve yapay zeka özniteliklerini üretir."""
     df = df_raw.copy()
     
@@ -744,7 +757,7 @@ def compute_quantum_features(df_raw: pd.DataFrame, symbol: str = "BTCUSDT", inte
     df['body_ratio'] = body / range_hl
     
     # --- YENİ EKLENEN: Kurumsal Order Flow ve Makro Birleştirme ---
-    df_flow = fetch_institutional_order_flow(symbol, interval, limit=len(df))
+    df_flow = fetch_institutional_order_flow(symbol, interval, limit=len(df), exchange_id=exchange_id)
     if not df_flow.empty:
         df_flow = df_flow.reset_index()
         df_flow = df_flow.rename(columns={'timestamp': 'time'})
@@ -1231,28 +1244,34 @@ def compute_institutional_risk_levels(
 
 # --- 6.5. SIDEBAR API ANAHTARLARI VE İŞLEM KONTROLLERİ ---
 with st.sidebar:
-    st.markdown("### 🔐 MEXC API & Otomasyon")
-    
-    env_creds = load_env_credentials()
+    st.markdown("### 🔐 Borsa API & Otomasyon")
 
+    selected_exchange_label = st.selectbox(
+        "🏦 Borsa Seçimi:",
+        list(SUPPORTED_EXCHANGES.keys()),
+        index=0,
+        help="Hesap bakiyeniz ve tüm piyasa/sinyal verileri seçtiğiniz borsadan çekilir."
+    )
+    selected_exchange_id = SUPPORTED_EXCHANGES[selected_exchange_label]
 
-    
+    env_creds = load_env_credentials(selected_exchange_id)
+
     with st.expander("🔑 API Key ve Secret Tanımla", expanded=not (env_creds["api_key"] and env_creds["secret_key"])):
-        st.info("💡 API anahtarlarınızı ister aşağıdaki kutucuklara yapıştırabilir, isterseniz de `.env` dosyasına kaydedebilirsiniz.")
-        user_api_key = st.text_input("MEXC API Key:", value=env_creds["api_key"], type="password", help="MEXC hesabınızdan ürettiğiniz Futures API Key")
-        user_secret_key = st.text_input("MEXC Secret Key:", value=env_creds["secret_key"], type="password", help="MEXC Secret Key")
-        
+        st.info(f"💡 {selected_exchange_label} API anahtarlarınızı ister aşağıdaki kutucuklara yapıştırabilir, isterseniz de `.env` dosyasına kaydedebilirsiniz.")
+        user_api_key = st.text_input(f"{selected_exchange_label} API Key:", value=env_creds["api_key"], type="password", help=f"{selected_exchange_label} hesabınızdan ürettiğiniz Futures API Key", key=f"api_key_{selected_exchange_id}")
+        user_secret_key = st.text_input(f"{selected_exchange_label} Secret Key:", value=env_creds["secret_key"], type="password", help=f"{selected_exchange_label} Secret Key", key=f"secret_key_{selected_exchange_id}")
+
         if user_api_key:
-            os.environ["MEXC_API_KEY"] = user_api_key
+            os.environ[f"{selected_exchange_id.upper()}_API_KEY"] = user_api_key
         if user_secret_key:
-            os.environ["MEXC_SECRET_KEY"] = user_secret_key
-            
-    active_api_key = os.getenv("MEXC_API_KEY", "").strip()
-    active_secret_key = os.getenv("MEXC_SECRET_KEY", "").strip()
-    
+            os.environ[f"{selected_exchange_id.upper()}_SECRET_KEY"] = user_secret_key
+
+    active_api_key = os.getenv(f"{selected_exchange_id.upper()}_API_KEY", "").strip()
+    active_secret_key = os.getenv(f"{selected_exchange_id.upper()}_SECRET_KEY", "").strip()
+
     wallet_balance_val = 0.0
     if active_api_key and active_secret_key:
-        bal = fetch_binance_account_balance(active_api_key, active_secret_key)
+        bal = fetch_binance_account_balance(selected_exchange_id, active_api_key, active_secret_key)
         if bal["status"] == "FUTURES_OK":
             wallet_balance_val = bal['wallet_balance']
             st.success(f"🟢 Private API: VADELİ BAĞLI & HAZIR\n\n💰 Vadeli Cüzdan: ${wallet_balance_val:,.2f} USDT")
@@ -1318,7 +1337,7 @@ if fav_c7.button("⚡ XRP (Ripple)", use_container_width=True):
     st.session_state["active_symbol_query"] = "XRPUSDT"
     st.rerun()
 
-all_futures_list, _ = get_all_binance_futures_symbols()
+all_futures_list, _ = get_all_binance_futures_symbols(selected_exchange_id)
 total_coin_count = len(all_futures_list)
 
 col_search, col_dropdown, col_tf, col_lev, col_budget, col_speed = st.columns([1.8, 1.8, 1.1, 1.0, 1.1, 1.0])
@@ -1331,12 +1350,12 @@ with col_search:
         help="Herhangi bir coin adı yazın. Akıllı eşleştirici otomatik bulur ve analizi başlatır."
     )
 
-symbol_str, match_info = normalize_futures_symbol(user_query)
+symbol_str, match_info = normalize_futures_symbol(user_query, selected_exchange_id)
 
 with col_dropdown:
     default_idx = all_futures_list.index(symbol_str) if symbol_str in all_futures_list else 0
     selected_from_dropdown = st.selectbox(
-        f"📋 Tüm MEXC Çiftleri ({total_coin_count} Coin):",
+        f"📋 Tüm {selected_exchange_label} Çiftleri ({total_coin_count} Coin):",
         all_futures_list,
         index=default_idx
     )
@@ -1347,7 +1366,7 @@ with col_dropdown:
 st.markdown(f"""
 <div style="background:#0b1120; border:1px solid #1e293b; padding:10px 16px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
     <div>
-        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🌐 MEXC Entegreli Toplam İşlem Çifti Sayısı:</span>
+        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🌐 {selected_exchange_label} Entegreli Toplam İşlem Çifti Sayısı:</span>
         <div style="font-size:18px; font-weight:900; color:#38bdf8;">{total_coin_count} / {total_coin_count} İşlem Çifti <span style="font-size:12px; color:#10b981; font-weight:bold;">(%100 Tam Borsa Entegre)</span></div>
     </div>
     <div style="text-align:right;">
@@ -1387,33 +1406,33 @@ if match_info and "💡" in match_info:
 def render_quantum_terminal():
     fetch_start = time.time()
     
-    # 1. Gerçek MEXC Futures ve Dolar Dominansı Verisi Çekme
-    df_raw = fetch_binance_kline_data(symbol_str, interval=active_interval, limit=350)
-    ticker = fetch_binance_ticker_details(symbol_str)
-    depth = fetch_binance_depth_imbalance(symbol_str)
+    # 1. Gerçek Borsa Vadeli İşlemler ve Dolar Dominansı Verisi Çekme
+    df_raw = fetch_binance_kline_data(symbol_str, interval=active_interval, limit=350, exchange_id=selected_exchange_id)
+    ticker = fetch_binance_ticker_details(symbol_str, exchange_id=selected_exchange_id)
+    depth = fetch_binance_depth_imbalance(symbol_str, exchange_id=selected_exchange_id)
     usdt_dom = fetch_usdt_dominance_matrix()
-    
+
     if df_raw.empty or len(df_raw) < 50:
-        st.error(f" '{symbol_str}' ({user_query}) için MEXC Vadeli İşlemler mum verisi alınamadı! Lütfen sembolü kontrol edin.")
+        st.error(f" '{symbol_str}' ({user_query}) için {selected_exchange_label} Vadeli İşlemler mum verisi alınamadı! Lütfen sembolü kontrol edin.")
         return
-        
+
     current_price = ticker.get("lastPrice", df_raw['close'].iloc[-1])
     change_24h = ticker.get("riseFallRate", 0.0)
     high_24h = ticker.get("high24Price", df_raw['high'].max())
     low_24h = ticker.get("lower24Price", df_raw['low'].min())
     funding_rate = ticker.get("fundingRate", 0.0)
-    
+
     # 2. Özellik Mühendisliği (Sembol ve Zaman Dilimi Geçildi)
-    df_features = compute_quantum_features(df_raw, symbol=symbol_str, interval=active_interval)
+    df_features = compute_quantum_features(df_raw, symbol=symbol_str, interval=active_interval, exchange_id=selected_exchange_id)
     latest_row = df_features.iloc[-1]
-    
+
     # 3. Yapay Zeka Modeli Eğitimi ve Olasılık Tahmini
     ai_result = train_and_predict_quantum_ai(df_features)
-    
+
     # 3.1. Uzun Vadeli Statik Destek/Direnç Seviyeleri, Makro Trend, 4H Tahmin ve Likidasyon Taraması
-    sr_levels = compute_macro_support_resistance_levels(df_raw, symbol_str)
-    macro_tf = compute_macro_timeframe_trend(symbol_str)
-    ai_4h_pred = compute_4h_scalp_prediction(symbol_str)
+    sr_levels = compute_macro_support_resistance_levels(df_raw, symbol_str, exchange_id=selected_exchange_id)
+    macro_tf = compute_macro_timeframe_trend(symbol_str, exchange_id=selected_exchange_id)
+    ai_4h_pred = compute_4h_scalp_prediction(symbol_str, exchange_id=selected_exchange_id)
     liq_matrix = compute_liquidation_clusters(df_raw, current_price)
     
     # 4. Sahte Sinyal Filtresi ve Confluence Değerlendirmesi (USDT Dominance + Majör S/R Entegre)
@@ -1460,7 +1479,7 @@ def render_quantum_terminal():
     # Üst Bilgi Rozeti (Seçili Coin / Zaman Dilimi / Kaldıraç / Bütçe)
     st.markdown(f"""
     <div style="background:#0b1120; padding:10px 16px; border-radius:8px; border:1px solid #1e293b; margin-bottom:12px;">
-        <span style="font-size: 20px; font-weight: 800; color: #38bdf8;">🟢 MEXC: {symbol_str}</span>
+        <span style="font-size: 20px; font-weight: 800; color: #38bdf8;">🟢 {selected_exchange_label}: {symbol_str}</span>
         <span style="color: #94a3b8; font-size: 13px; margin-left: 10px;">| {selected_tf_label} | <b style="color:#f59e0b;">{selected_leverage}x Kaldıraç</b> | <b style="color:#10b981;">Bütçe: ${margin_budget:,.0f}</b></span>
     </div>
     """, unsafe_allow_html=True)
@@ -1904,7 +1923,7 @@ def render_quantum_terminal():
 
     # İşlem Motoru Gecikme Bilgisi
     elapsed_ms = (time.time() - fetch_start) * 1000
-    st.caption(f"⚡ BtcSatoshi Live-Trade & AI Quant Engine: {elapsed_ms:.1f} ms | Model: Ensemble (RF+ET+HGB) | Canlı Borsa: MEXC Futures v1 & v2")
+    st.caption(f"⚡ BtcSatoshi Live-Trade & AI Quant Engine: {elapsed_ms:.1f} ms | Model: Ensemble (RF+ET+HGB) | Canlı Borsa: {selected_exchange_label} Futures")
 
 # Terminali Çalıştır
 render_quantum_terminal()

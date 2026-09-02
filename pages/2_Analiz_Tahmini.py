@@ -143,26 +143,31 @@ def fetch_macro_data() -> tuple:
     return fg_df, dxy_df, spy_df
 
 # ─────────────────────────────────────────────────────────────────
-# 2. KRİPTO VERİ ÇEKİMİ (MEXC - RATE LIMIT KORUMALI)
+# 2. KRİPTO VERİ ÇEKİMİ (SEÇİLEN BORSA - RATE LIMIT KORUMALI)
 # ─────────────────────────────────────────────────────────────────
-@st.cache_resource(ttl=1800, show_spinner=False)
-def get_public_mexc_client():
-    """Tek, paylasilan ve piyasa listesi onceden yuklenmis MEXC istemcisi.
+# Desteklenen borsalar: MEXC (varsayilan) ve Binance. Ikisi de ccxt-unified ayni sozlesme
+# sembol formatini ("BASE/USDT:USDT") ve ayni kimlik dogrulama alanlarini kullaniyor.
+SUPPORTED_EXCHANGES = {"MEXC": "mexc", "Binance": "binance"}
 
-    ONEMLI PERFORMANS NOTU: Her fetch_crypto_data cagrisinda taze bir ccxt.mexc() nesnesi
+@st.cache_resource(ttl=1800, show_spinner=False)
+def get_public_exchange_client(exchange_id: str = "mexc"):
+    """Tek, paylasilan ve piyasa listesi onceden yuklenmis borsa istemcisi. exchange_id'ye gore
+    ayri ayri onbelleklenir.
+
+    ONEMLI PERFORMANS NOTU: Her fetch_crypto_data cagrisinda taze bir ccxt nesnesi
     olusturulursa, ccxt ilk fetch_ohlcv cagrisinda otomatik load_markets() calistirir
     (~3000 spot+vadeli sozlesmeyi indirir). Bu, 5 saniyede bir yenilenen canli panelde
     her seferinde tekrarlanip yavas yuklemeye sebep oluyordu.
     """
-    ex = ccxt.mexc({"enableRateLimit": True, "timeout": 30000, "options": {"defaultType": "swap"}})
+    klass = getattr(ccxt, exchange_id)
+    ex = klass({"enableRateLimit": True, "timeout": 30000, "options": {"defaultType": "swap"}})
     ex.load_markets()
     return ex
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_crypto_data(exchange_id: str, symbol: str, timeframe: str, limit: int = 1500) -> pd.DataFrame:
     try:
-        # exchange_id görmezden gelinerek her halükarda MEXC Swap kullanılacak
-        ex = get_public_mexc_client()
+        ex = get_public_exchange_client(exchange_id)
 
         import numpy as np
         
@@ -220,7 +225,8 @@ def fetch_crypto_data(exchange_id: str, symbol: str, timeframe: str, limit: int 
         return df.astype(float)
         
     except Exception as e:
-        st.error(f"MEXC verisi çekilirken teknik bir hata oluştu: {str(e)}")
+        ex_label = next((k for k, v in SUPPORTED_EXCHANGES.items() if v == exchange_id), exchange_id.upper())
+        st.error(f"{ex_label} verisi çekilirken teknik bir hata oluştu: {str(e)}")
         return pd.DataFrame()
 
 # Yardımcı İndikatör Fonksiyonları
@@ -467,6 +473,8 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
 def main():
     with st.sidebar:
         st.markdown("## 🎯 SWING AI AYARLARI")
+        selected_exchange_label = st.selectbox("🏦 Borsa Seçimi:", list(SUPPORTED_EXCHANGES.keys()), index=0, help="Tüm piyasa verileri ve analiz seçtiğiniz borsadan çekilir.")
+        selected_exchange_id = SUPPORTED_EXCHANGES[selected_exchange_label]
         symbol = st.selectbox("🪙 Coin", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"])
         tf = st.selectbox("⏱️ Z. Dilimi", ["15m", "30m", "1h", "4h", "1d"], index=0)
         
@@ -488,7 +496,7 @@ def main():
     @st.fragment(run_every=refresh_rate)
     def render_classic_terminal():
         with st.spinner("Piyasa verileri yükleniyor... (API İstekleri Sıralanıyor)"):
-            df_crypto = fetch_crypto_data("mexc", symbol, tf, limit=1500)
+            df_crypto = fetch_crypto_data(selected_exchange_id, symbol, tf, limit=1500)
             if df_crypto.empty:
                 st.stop()
                 
