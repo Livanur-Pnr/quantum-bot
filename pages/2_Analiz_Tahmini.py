@@ -396,27 +396,35 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
     in_pos = False
     pos_type = None
     tp, sl = np.nan, np.nan
-    ai_signals, trade_status, active_tps, active_sls = [], [], [], []
-    
+    ai_signals, trade_status, active_tps, active_sls, is_entries = [], [], [], [], []
+
     threshold = threshold / 100.0  # Normalize threshold
-    
+
     for i in range(len(df)):
+        entered_now = False
         if in_pos:
             if pos_type == 'LONG' and (df['low'].iloc[i] <= sl or df['high'].iloc[i] >= tp): in_pos = False
             elif pos_type == 'SHORT' and (df['high'].iloc[i] >= sl or df['low'].iloc[i] <= tp): in_pos = False
-            
+
         if not in_pos:
             if df['prob_long'].iloc[i] > (threshold * 100):
                 in_pos, pos_type, tp, sl = True, 'LONG', df['close'].iloc[i] + tp_dist_arr[i], df['close'].iloc[i] - sl_dist_arr[i]
+                entered_now = True
             elif df['prob_short'].iloc[i] > (threshold * 100):
                 in_pos, pos_type, tp, sl = True, 'SHORT', df['close'].iloc[i] - tp_dist_arr[i], df['close'].iloc[i] + sl_dist_arr[i]
-                
+                entered_now = True
+
         ai_signals.append(pos_type if in_pos else 'NONE')
         trade_status.append('IN_TRADE' if in_pos else 'IDLE')
         active_tps.append(tp if in_pos else np.nan)
         active_sls.append(sl if in_pos else np.nan)
-        
-    df['ai_signal'], df['trade_status'], df['active_tp'], df['active_sl'] = ai_signals, trade_status, active_tps, active_sls
+        # ONEMLI: "is_entry" sadece pozisyonun ACILDIGI tek mumu isaretler; "ai_signal" ise
+        # pozisyon acik oldugu SUERECE (giristen cikisa kadar) her mumda tekrar eder. Grafikte
+        # ai_signal'e gore etiket basmak, tek bir islem icin onlarca ust uste binen kutucuk
+        # uretiyordu - bu yuzden grafik/kayit defteri artik is_entry'yi kullaniyor.
+        is_entries.append(entered_now)
+
+    df['ai_signal'], df['trade_status'], df['active_tp'], df['active_sl'], df['is_entry'] = ai_signals, trade_status, active_tps, active_sls, is_entries
     
     return df, 99.9, final_features
 
@@ -429,12 +437,16 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     fig.add_trace(go.Scattergl(x=df.index, y=df['prob_short'], mode='lines', line=dict(color='#f7525f', width=2), name='SHORT %', fill='tozeroy', fillcolor='rgba(247, 82, 95, 0.1)'), row=2, col=1)
     fig.add_hline(y=threshold, line_dash="dot", line_color="#d1d4dc", opacity=0.7, row=2, col=1)
 
-    recent_df = df.tail(300) 
-    for idx, row in recent_df[recent_df["ai_signal"] == "LONG"].iterrows():
+    # ONEMLI: Etiketler artik SADECE gercek giris anini ("is_entry") isaretliyor; onceden
+    # pozisyonun acik oldugu HER mum "ai_signal" tasidigindan, tek bir islem icin onlarca
+    # kutucuk ust uste biniyordu. Artik her islem icin tam olarak TEK kutucuk basiliyor.
+    recent_df = df.tail(300)
+    entry_df = recent_df[recent_df.get("is_entry", False) == True] if "is_entry" in recent_df.columns else recent_df.iloc[0:0]
+    for idx, row in entry_df[entry_df["ai_signal"] == "LONG"].iterrows():
         if idx != df.index[-1]:
             text = f"<b>AI LONG</b> | %{row['prob_long']:.1f}<br>TP: {format_price(row['active_tp'])} | SL: {format_price(row['active_sl'])}"
             fig.add_annotation(x=idx, y=row["low"]-(row["atr"]*0.3), text=text, showarrow=True, arrowhead=2, arrowcolor="#22ab94", ax=0, ay=40, font=dict(size=9, color="#d1d4dc"), bgcolor="rgba(34,171,148,0.15)", bordercolor="rgba(34,171,148,0.8)", borderwidth=1, row=1, col=1)
-    for idx, row in recent_df[recent_df["ai_signal"] == "SHORT"].iterrows():
+    for idx, row in entry_df[entry_df["ai_signal"] == "SHORT"].iterrows():
         if idx != df.index[-1]:
             text = f"<b>AI SHORT</b> | %{row['prob_short']:.1f}<br>TP: {format_price(row['active_tp'])} | SL: {format_price(row['active_sl'])}"
             fig.add_annotation(x=idx, y=row["high"]+(row["atr"]*0.3), text=text, showarrow=True, arrowhead=2, arrowcolor="#f7525f", ax=0, ay=-40, font=dict(size=9, color="#d1d4dc"), bgcolor="rgba(247,82,95,0.15)", bordercolor="rgba(247,82,95,0.8)", borderwidth=1, row=1, col=1)
@@ -589,7 +601,59 @@ def main():
     
         fig = build_realtime_chart(df.tail(300).copy(), ai_threshold, tp_m, sl_m, timeframe=tf)
         st.plotly_chart(fig, use_container_width=True, height=850, config={'displayModeBar': False, 'scrollZoom': True})
-    
+
+        # ONEMLI: Grafikteki kutucuklar cok sik oldugunda ust uste binip okunmaz hale
+        # geliyordu. Bunun icin grafigin ALTINA, su ana kadar uretilen TUM giris sinyallerini
+        # (is_entry == True) tarihli ve en yeniden en eskiye siralanmis sekilde listeleyen bir
+        # kayit defteri eklendi. Bu panel her fragment yenilenmesinde (5 saniyede bir) df'den
+        # yeniden hesaplandigi icin, yeni bir giris sinyali olustugunda otomatik olarak en üste
+        # eklenip gorunur.
+        st.markdown("---")
+        st.markdown("## 📜 Geçmiş İşlem Sinyalleri Kayıt Defteri")
+
+        entries_df = df[df.get("is_entry", False) == True].copy() if "is_entry" in df.columns else df.iloc[0:0]
+        if not entries_df.empty:
+            entries_df = entries_df.sort_index(ascending=False).head(100)
+            st.caption(f"Yapay zekanın bu coin/zaman dilimi için ürettiği son {len(entries_df)} giriş sinyali (en yeni en üstte). Yeni bir sinyal oluştuğunda otomatik olarak buraya eklenir.")
+
+            rows_html = ""
+            for idx, row in entries_df.iterrows():
+                is_long_row = row["ai_signal"] == "LONG"
+                dir_color = "#22ab94" if is_long_row else "#f7525f"
+                dir_label = "🟢 LONG" if is_long_row else "🔴 SHORT"
+                conf = row["prob_long"] if is_long_row else row["prob_short"]
+                ts = idx.strftime("%Y-%m-%d %H:%M") if hasattr(idx, "strftime") else str(idx)
+                rows_html += f"""
+                <tr style="border-bottom:1px solid #1c212d;">
+                    <td style="padding:8px 12px; color:#94a3b8; font-size:12px; white-space:nowrap;">{ts}</td>
+                    <td style="padding:8px 12px; font-weight:bold; color:{dir_color}; white-space:nowrap;">{dir_label}</td>
+                    <td style="padding:8px 12px; color:#d1d4dc;">%{conf:.1f}</td>
+                    <td style="padding:8px 12px; color:#d1d4dc;">{format_price(row['close'])}</td>
+                    <td style="padding:8px 12px; color:#22ab94;">{format_price(row['active_tp'])}</td>
+                    <td style="padding:8px 12px; color:#f7525f;">{format_price(row['active_sl'])}</td>
+                </tr>"""
+
+            table_html = f"""
+            <div style="max-height:420px; overflow-y:auto; border:1px solid #1c212d; border-radius:8px;">
+            <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                <thead style="position:sticky; top:0; background:#0b0e14; z-index:1;">
+                    <tr style="border-bottom:1px solid #2a2e39;">
+                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Tarih / Saat</th>
+                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Yön</th>
+                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Güven</th>
+                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Giriş</th>
+                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">TP</th>
+                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">SL</th>
+                    </tr>
+                </thead>
+                <tbody>{rows_html}</tbody>
+            </table>
+            </div>
+            """
+            st.markdown(table_html, unsafe_allow_html=True)
+        else:
+            st.caption("Bu coin/zaman diliminde henüz eşik üzerinde bir giriş sinyali oluşmadı.")
+
     render_classic_terminal()
 
 if __name__ == "__main__":
