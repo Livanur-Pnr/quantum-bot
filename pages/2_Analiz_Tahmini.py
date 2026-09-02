@@ -488,7 +488,12 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 showlegend=False,
             ), row=1, col=1)
             for xi, yi in zip(long_e.index, long_y):
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.2, arrowcolor="#00ff8c", ax=0, ay=15, standoff=1, row=1, col=1)
+                # ONEMLI: Ince tek cizgi duz/amator gorunuyordu. Once biraz daha kalin KOYU
+                # (arka plan rengiyle ayni) bir "halo" cizgisi, ustune ince renkli cizgi
+                # basiliyor - bu, profesyonel grafik araclarindaki gibi hafif bir kontur/derinlik
+                # hissi verip her turlu mum renginin ustunde net secilmesini sagliyor.
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.6, arrowcolor="#0b0e14", ax=0, ay=15, standoff=1, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=15, standoff=1, row=1, col=1)
 
         if not short_e.empty:
             short_y = short_e["high"] + (short_e["atr"] * 0.3)
@@ -508,7 +513,8 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 showlegend=False,
             ), row=1, col=1)
             for xi, yi in zip(short_e.index, short_y):
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.2, arrowcolor="#ff2d55", ax=0, ay=-15, standoff=1, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.6, arrowcolor="#0b0e14", ax=0, ay=-15, standoff=1, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=-15, standoff=1, row=1, col=1)
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8 
