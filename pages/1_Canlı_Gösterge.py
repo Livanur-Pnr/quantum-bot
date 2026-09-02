@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="Canlı Gösterge", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Analiz Tahmini", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
 import sys
 import codecs
@@ -1322,47 +1322,45 @@ with st.sidebar:
         </div>
     </div>
     """, unsafe_allow_html=True)
-    
 
-# --- 7. BAŞLIK VE KONTROL PANELİ ---
-st.title("⚡ Canlı Gösterge")
+    # --- COİN & GÖSTERGE KONTROLLERİ (Kullanıcı isteğiyle ana panelden sol menüye taşındı) ---
+    st.markdown("---")
+    st.markdown("### ⚡ Coin & Gösterge Kontrolleri")
 
-# Favori coin butonları için session state başlat
-if "active_symbol_query" not in st.session_state:
-    st.session_state["active_symbol_query"] = "BTCUSDT"
+    if "active_symbol_query" not in st.session_state:
+        st.session_state["active_symbol_query"] = "BTCUSDT"
 
-# Hızlı Favori Coin Şeridi
-st.markdown("<div style='margin-bottom:8px; font-size:12px; color:#94a3b8; font-weight:bold; text-transform:uppercase;'>⚡ Hızlı Favori Coin Seçimi (Tek Tıkla Adaptasyon):</div>", unsafe_allow_html=True)
-fav_c1, fav_c2, fav_c3, fav_c4, fav_c5, fav_c6, fav_c7 = st.columns(7)
+    st.markdown("<div style='margin-bottom:6px; font-size:12px; color:#94a3b8; font-weight:bold; text-transform:uppercase;'>⚡ Hızlı Favori Coin Seçimi:</div>", unsafe_allow_html=True)
+    fav_row1 = st.columns(2)
+    fav_row2 = st.columns(2)
+    fav_row3 = st.columns(2)
+    fav_row4 = st.columns(2)
 
-if fav_c1.button("⚡ BTC (Bitcoin)", use_container_width=True):
-    st.session_state["active_symbol_query"] = "BTCUSDT"
-    st.rerun()
-if fav_c2.button("💎 ETH (Ethereum)", use_container_width=True):
-    st.session_state["active_symbol_query"] = "ETHUSDT"
-    st.rerun()
-if fav_c3.button("🚀 SOL (Solana)", use_container_width=True):
-    st.session_state["active_symbol_query"] = "SOLUSDT"
-    st.rerun()
-if fav_c4.button("🐸 1000PEPE", use_container_width=True):
-    st.session_state["active_symbol_query"] = "1000PEPEUSDT"
-    st.rerun()
-if fav_c5.button("🌊 SUI (Sui)", use_container_width=True):
-    st.session_state["active_symbol_query"] = "SUIUSDT"
-    st.rerun()
-if fav_c6.button("🐕 DOGE (Doge)", use_container_width=True):
-    st.session_state["active_symbol_query"] = "DOGEUSDT"
-    st.rerun()
-if fav_c7.button("⚡ XRP (Ripple)", use_container_width=True):
-    st.session_state["active_symbol_query"] = "XRPUSDT"
-    st.rerun()
+    if fav_row1[0].button("⚡ BTC", use_container_width=True):
+        st.session_state["active_symbol_query"] = "BTCUSDT"
+        st.rerun()
+    if fav_row1[1].button("💎 ETH", use_container_width=True):
+        st.session_state["active_symbol_query"] = "ETHUSDT"
+        st.rerun()
+    if fav_row2[0].button("🚀 SOL", use_container_width=True):
+        st.session_state["active_symbol_query"] = "SOLUSDT"
+        st.rerun()
+    if fav_row2[1].button("🐸 1000PEPE", use_container_width=True):
+        st.session_state["active_symbol_query"] = "1000PEPEUSDT"
+        st.rerun()
+    if fav_row3[0].button("🌊 SUI", use_container_width=True):
+        st.session_state["active_symbol_query"] = "SUIUSDT"
+        st.rerun()
+    if fav_row3[1].button("🐕 DOGE", use_container_width=True):
+        st.session_state["active_symbol_query"] = "DOGEUSDT"
+        st.rerun()
+    if fav_row4[0].button("⚡ XRP", use_container_width=True):
+        st.session_state["active_symbol_query"] = "XRPUSDT"
+        st.rerun()
 
-all_futures_list, _ = get_all_binance_futures_symbols(selected_exchange_id)
-total_coin_count = len(all_futures_list)
+    all_futures_list, _ = get_all_binance_futures_symbols(selected_exchange_id)
+    total_coin_count = len(all_futures_list)
 
-col_search, col_dropdown, col_tf, col_lev, col_budget, col_speed = st.columns([1.8, 1.8, 1.1, 1.0, 1.1, 1.0])
-
-with col_search:
     user_query = st.text_input(
         f"🔍 Serbest Arama ({total_coin_count} Coin):",
         value=st.session_state.get("active_symbol_query", "BTCUSDT"),
@@ -1370,9 +1368,8 @@ with col_search:
         help="Herhangi bir coin adı yazın. Akıllı eşleştirici otomatik bulur ve analizi başlatır."
     )
 
-symbol_str, match_info = normalize_futures_symbol(user_query, selected_exchange_id)
+    symbol_str, match_info = normalize_futures_symbol(user_query, selected_exchange_id)
 
-with col_dropdown:
     default_idx = all_futures_list.index(symbol_str) if symbol_str in all_futures_list else 0
     selected_from_dropdown = st.selectbox(
         f"📋 Tüm {selected_exchange_label} Çiftleri ({total_coin_count} Coin):",
@@ -1382,21 +1379,6 @@ with col_dropdown:
     if selected_from_dropdown != symbol_str:
         symbol_str = selected_from_dropdown
 
-# Entegre Coin ve Canlı Yapay Zeka Analiz Durumu Kartı
-st.markdown(f"""
-<div style="background:#0b1120; border:1px solid #1e293b; padding:10px 16px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-    <div>
-        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🌐 {selected_exchange_label} Entegreli Toplam İşlem Çifti Sayısı:</span>
-        <div style="font-size:18px; font-weight:900; color:#38bdf8;">{total_coin_count} / {total_coin_count} İşlem Çifti <span style="font-size:12px; color:#10b981; font-weight:bold;">(%100 Tam Borsa Entegre)</span></div>
-    </div>
-    <div style="text-align:right;">
-        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🤖 Anlık Canlı Analiz Edilen Coin:</span>
-        <div style="font-size:16px; font-weight:bold; color:#10b981;"><span style="color:#38bdf8;">{symbol_str}</span> Sinyal & Derinlik Analizi Aktif</div>
-    </div>
-</div>
-""", unsafe_allow_html=True)
-
-with col_tf:
     timeframe_map = {
         "1 Dakika (Scalp)": "Min1",
         "5 Dakika (Day Trade)": "Min5",
@@ -1407,14 +1389,12 @@ with col_tf:
     selected_tf_label = st.selectbox("⏱️ Zaman Dilimi:", list(timeframe_map.keys()), index=0)
     active_interval = timeframe_map[selected_tf_label]
 
-with col_lev:
     # ONEMLI: Kaldirac artik sabit secenekler yerine serbest metin/sayi girisi - kullanici
     # borsanin izin verdigi herhangi bir degeri (orn. 37x, 63x) yazabilir. SL/TP hesaplamasi
     # (compute_institutional_risk_levels) zaten formul bazli oldugundan her kaldirac degerinde
     # dogru sekilde calisir; sabit bir liste ile sinirli degildir.
     selected_leverage = int(st.number_input("⚡ Kaldıraç (x):", min_value=1, max_value=200, value=10, step=1, format="%d", help="Borsanızın izin verdiği herhangi bir kaldıraç değerini yazabilirsiniz (1x - 200x)."))
 
-with col_budget:
     # ONEMLI: API baglantisi varsa VE kullanici "kasa siniri olmadan genel analiz" secmediyse,
     # kullaniciyi gercekte sahip olmadigi bir tutari marjin olarak girmekten (imkansiz/tehlikeli
     # bir islem varsayimindan) korumak icin butce, gercek cuzdan bakiyesiyle sinirlandirilir.
@@ -1431,8 +1411,25 @@ with col_budget:
     else:
         margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=10.0, max_value=100000.0, value=100.0, step=50.0, format="%.0f")
 
-with col_speed:
     refresh_rate = st.selectbox("🔄 Akış Hızı:", [3, 5, 10, 15], index=0, format_func=lambda x: f"{x} Saniyede Bir")
+
+
+# --- 7. BAŞLIK VE DURUM KARTI ---
+st.title("⚡ Analiz Tahmini")
+
+# Entegre Coin ve Canlı Yapay Zeka Analiz Durumu Kartı
+st.markdown(f"""
+<div style="background:#0b1120; border:1px solid #1e293b; padding:10px 16px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+    <div>
+        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🌐 {selected_exchange_label} Entegreli Toplam İşlem Çifti Sayısı:</span>
+        <div style="font-size:18px; font-weight:900; color:#38bdf8;">{total_coin_count} / {total_coin_count} İşlem Çifti <span style="font-size:12px; color:#10b981; font-weight:bold;">(%100 Tam Borsa Entegre)</span></div>
+    </div>
+    <div style="text-align:right;">
+        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🤖 Anlık Canlı Analiz Edilen Coin:</span>
+        <div style="font-size:16px; font-weight:bold; color:#10b981;"><span style="color:#38bdf8;">{symbol_str}</span> Sinyal & Derinlik Analizi Aktif</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 if match_info and "💡" in match_info:
     st.info(match_info)

@@ -44,7 +44,7 @@ except ImportError:
 # 0. SAYFA YAPILANDIRMASI, TEMA VE SESSION
 # ─────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Analiz Tahmini",
+    page_title="Canlı Gösterge",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded", 
