@@ -517,11 +517,32 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=-15, standoff=1, row=1, col=1)
 
     last_idx, last = df.index[-1], df.iloc[-1]
-    future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8 
+    future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8
     is_long = last['prob_long'] > last['prob_short']
     live_prob, live_dir = (last["prob_long"], "LONG") if is_long else (last["prob_short"], "SHORT")
     color = "#22ab94" if is_long else "#f7525f"
     last_price = last['close']
+
+    # ONEMLI - REFERANS GORSEL: Kullanicinin referans verdigi borsa (MEXC) grafigindeki gibi,
+    # grafigin en ustune son mumun Open/Close/High/Low/Degisim/Hacim bilgisini gosteren bir ust
+    # bilgi satiri; grafigin ortasindan gecen kesikli bir "guncel fiyat" cizgisi; ve sag kenarda
+    # o an gecerli fiyati vurgulayan renkli bir fiyat etiketi eklendi.
+    prev_close = df['close'].iloc[-2] if len(df) > 1 else last['open']
+    chg = last['close'] - prev_close
+    chg_pct = (chg / prev_close * 100.0) if prev_close else 0.0
+    ohlc_color = "#22ab94" if chg >= 0 else "#f7525f"
+    ohlc_text = (
+        f"<b>{last_idx.strftime('%Y/%m/%d %H:%M')}</b> | "
+        f"Open: <b>{format_price(last['open'])}</b> | "
+        f"Close: <b>{format_price(last['close'])}</b> | "
+        f"High: <b>{format_price(last['high'])}</b> | "
+        f"Low: <b>{format_price(last['low'])}</b> | "
+        f"Change: <b>{chg:+,.1f} ({chg_pct:+.2f}%)</b> | "
+        f"Volume: <b>{last['volume']:,.1f}</b>"
+    )
+    fig.add_annotation(xref="x domain", yref="y domain", x=0, y=1.04, xanchor="left", yanchor="bottom", text=ohlc_text, showarrow=False, font=dict(size=11, color=ohlc_color), align="left")
+    fig.add_hline(y=last_price, line_dash="dot", line_color=ohlc_color, opacity=0.55, line_width=1, row=1, col=1)
+    fig.add_annotation(xref="paper", x=1.001, xanchor="left", yref="y", y=last_price, yanchor="middle", text=f"<b>{format_price(last_price)}</b>", showarrow=False, font=dict(size=11, color="#0b0e14"), align="center", bgcolor=ohlc_color, borderpad=4)
     live_tp_dist = clamp_tp_sl_dist(last['atr'] * tp_m, last_price, timeframe, "tp")
     live_sl_dist = clamp_tp_sl_dist(last['atr'] * sl_m, last_price, timeframe, "sl")
     live_tp = last_price + live_tp_dist if is_long else last_price - live_tp_dist
@@ -538,7 +559,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     fig.add_shape(type="line", x0=last_idx, y0=last['close'], x1=future_idx, y1=live_tp, line=dict(color=color, dash="dot", width=1), opacity=0.5, row=1, col=1)
     fig.add_annotation(x=future_idx, y=live_tp, text=label_text, showarrow=True, arrowhead=2, arrowcolor=color, font=dict(size=12, color=text_color), align="left", bgcolor=bg_color, bordercolor=color, borderwidth=2, borderpad=6, ax=40, ay=0, row=1, col=1)
 
-    fig.update_layout(template="plotly_dark", paper_bgcolor="#0b0e14", plot_bgcolor="#0b0e14", height=850, margin=dict(l=10, r=40, t=10, b=20), hovermode="x unified", showlegend=False, xaxis_rangeslider_visible=False)
+    fig.update_layout(template="plotly_dark", paper_bgcolor="#0b0e14", plot_bgcolor="#0b0e14", height=850, margin=dict(l=10, r=70, t=48, b=20), hovermode="x unified", showlegend=False, xaxis_rangeslider_visible=False)
     fig.update_xaxes(gridcolor="#1c212d", zeroline=False, showspikes=True, spikecolor="#2a2e39", rangebreaks=[])
     fig.update_yaxes(gridcolor="#1c212d", zeroline=False, side="right") 
     fig.update_yaxes(range=[0, 100], row=2, col=1) 
