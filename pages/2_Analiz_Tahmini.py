@@ -475,7 +475,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
             fig.add_trace(go.Scatter(
                 x=long_e.index, y=long_y,
                 mode="markers", name="AI LONG",
-                marker=dict(size=14, color="#22ab94", opacity=0.001),
+                marker=dict(size=17, color="#22ab94", opacity=0.001),
                 customdata=np.stack([
                     long_e.index.strftime("%Y-%m-%d %H:%M"),
                     ["LONG"] * len(long_e),
@@ -488,14 +488,14 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 showlegend=False,
             ), row=1, col=1)
             for xi, yi in zip(long_e.index, long_y):
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.2, arrowwidth=2.2, arrowcolor="#00ff8c", ax=0, ay=13, standoff=1, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.2, arrowcolor="#00ff8c", ax=0, ay=15, standoff=1, row=1, col=1)
 
         if not short_e.empty:
             short_y = short_e["high"] + (short_e["atr"] * 0.3)
             fig.add_trace(go.Scatter(
                 x=short_e.index, y=short_y,
                 mode="markers", name="AI SHORT",
-                marker=dict(size=14, color="#f7525f", opacity=0.001),
+                marker=dict(size=17, color="#f7525f", opacity=0.001),
                 customdata=np.stack([
                     short_e.index.strftime("%Y-%m-%d %H:%M"),
                     ["SHORT"] * len(short_e),
@@ -508,7 +508,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 showlegend=False,
             ), row=1, col=1)
             for xi, yi in zip(short_e.index, short_y):
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.2, arrowwidth=2.2, arrowcolor="#ff2d55", ax=0, ay=-13, standoff=1, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.2, arrowcolor="#ff2d55", ax=0, ay=-15, standoff=1, row=1, col=1)
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8 
