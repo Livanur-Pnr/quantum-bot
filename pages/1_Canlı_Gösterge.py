@@ -1170,6 +1170,16 @@ def compute_institutional_risk_levels(
         min_tp_dist = float(np.clip(min_tp_dist, current_price * tf_bounds["tp_min"], current_price * tf_bounds["tp_max"]))
         max_tp_dist = float(np.clip(max_tp_dist, current_price * tf_bounds["tp_min"], current_price * tf_bounds["tp_max"]))
 
+    # ONEMLI - LİKİDASYON GÜVENLİĞİ: Yuksek kaldiracta likidasyon mesafesi kucalir; eger SL bu
+    # mesafeden daha genis kalirsa, pozisyon SL'e ULAŞAMADAN once likit olur (marjinin tamami
+    # gider). Kaldiraca gore SL'in likidasyon mesafesinin guvenli bir payinin (%75) icinde
+    # kalmasi garanti edilir - kaldirac arttikca SL otomatik daralir. Bu, zaman dilimi
+    # sinirinin ALTINA inmesi gerekse bile ("SL cok daralmasin" kuralindan daha oncelikli),
+    # cunku amac hicbir kosulda tam likidasyon riskine izin vermemek.
+    liq_dist_abs = current_price * (0.90 / lev)
+    safe_sl_ceiling = liq_dist_abs * 0.75
+    sl_dist = min(sl_dist, safe_sl_ceiling)
+
     liq_dist_pct = (0.90 / lev) * 100.0
     
     if "LONG" in signal:
@@ -1392,7 +1402,15 @@ with col_lev:
     selected_leverage = st.selectbox("⚡ Kaldıraç:", leverage_options, index=4, format_func=lambda x: f"{x}x")
 
 with col_budget:
-    margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=10.0, max_value=100000.0, value=100.0, step=50.0, format="%.0f")
+    # ONEMLI: API baglantisi varsa, kullaniciyi gercekte sahip olmadigi bir tutari marjin
+    # olarak girmekten (imkansiz/tehlikeli bir islem varsayimindan) korumak icin butce,
+    # gercek cuzdan bakiyesiyle sinirlandirilir.
+    if wallet_balance_val > 0:
+        _budget_max = max(wallet_balance_val, 10.0)
+        _budget_default = min(wallet_balance_val, 100.0) if wallet_balance_val >= 10.0 else wallet_balance_val
+        margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=10.0, max_value=_budget_max, value=float(_budget_default), step=50.0, format="%.0f", help=f"Bağlı hesap bakiyeniz ${wallet_balance_val:,.2f} — bu tutarı aşamazsınız.")
+    else:
+        margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=10.0, max_value=100000.0, value=100.0, step=50.0, format="%.0f")
 
 with col_speed:
     refresh_rate = st.selectbox("🔄 Akış Hızı:", [3, 5, 10, 15], index=0, format_func=lambda x: f"{x} Saniyede Bir")
