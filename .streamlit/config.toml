@@ -1,0 +1,6 @@
+# Streamlit sunucu ayarlari - performans amacli.
+# OneDrive ile senkronize edilen proje klasorunde, ilgisiz klasorlerin (git, scratch,
+# sanal ortam, onbellek) dosya izleyici tarafindan taranmasini engelleyerek gereksiz
+# yeniden calistirmalari ve izleme yukunu azaltir.
+[server]
+folderWatchBlacklist = [".git", "scratch", ".vs", "__pycache__", "venv", "env"]
