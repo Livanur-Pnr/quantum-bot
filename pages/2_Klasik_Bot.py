@@ -425,8 +425,15 @@ def main():
             ai_threshold = st.slider("Güven Eşiği (%)", 50, 95, 65, 1)
             tp_m = st.slider("TP Çarpanı (ATR)", 1.0, 8.0, 4.0, 0.5)
             sl_m = st.slider("SL Çarpanı (ATR)", 0.5, 4.0, 1.5, 0.1)
-        
-    
+
+        st.markdown("---")
+        # ONEMLI: Fragment (otomatik yenilenen bolum) icinde dogrudan "with st.sidebar:"
+        # acilirsa Streamlit hata verir (StreamlitAPIException) - cunku o pozisyon tam
+        # (fragment disi) calistirmada rezerve edilmemis olur. Bunun yerine burada, tam
+        # calistirma sirasinda bos bir yer (.empty()) ayirip, fragment icinde sadece bu
+        # yerin icini dolduruyoruz.
+        paper_trade_slot = st.empty()
+
     refresh_rate = 5
     @st.fragment(run_every=refresh_rate)
     def render_classic_terminal():
@@ -462,8 +469,7 @@ def main():
     
         last, last_price, atr = df.iloc[-1], df.iloc[-1]['close'], df.iloc[-1]['atr']
         
-        with st.sidebar:
-            st.markdown("---")
+        with paper_trade_slot.container():
             st.markdown("## 💸 SANAL İŞLEM (PAPER TRADING)")
             if st.session_state.position is None:
                 st.markdown(f"**💰 Cüzdan Bakiyesi:** <span style='color:#22ab94'>${st.session_state.balance:,.2f}</span>", unsafe_allow_html=True)
@@ -482,7 +488,10 @@ def main():
             else:
                 pos = st.session_state.position
                 live_pnl = (last_price - pos['entry']) * pos['qty'] if pos['side'] == 'LONG' else (pos['entry'] - last_price) * pos['qty']
-                st.markdown(f"**Açık İşlem:** {pos['side']} {pos['symbol']}<br>**Giriş:** ${pos['entry']:,.2f}<br>**Canlı PnL:** <span style='color:{'#22ab94' if live_pnl>=0 else '#f7525f'}; font-size:1.2rem; font-weight:bold'>${live_pnl:,.2f}</span>", unsafe_allow_html=True)
+                # ONEMLI: Ayni markdown cagrisinda 2+ tane duz "$" (dolar) isareti olursa,
+                # Streamlit aralarini LaTeX matematik modu sanip HTML/markdown'i bozuyor.
+                # Bu yuzden dolar isaretleri "\$" olarak kacisli (escaped) kullaniliyor.
+                st.markdown(f"**Açık İşlem:** {pos['side']} {pos['symbol']}<br>**Giriş:** \\${pos['entry']:,.2f}<br>**Canlı PnL:** <span style='color:{'#22ab94' if live_pnl>=0 else '#f7525f'}; font-size:1.2rem; font-weight:bold'>\\${live_pnl:,.2f}</span>", unsafe_allow_html=True)
                 if st.button("❌ Pozisyonu Kapat", use_container_width=True):
                     st.session_state.balance += live_pnl
                     st.session_state.position = None
