@@ -460,12 +460,36 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     # ONEMLI: Asagida ALTTAKI "Gecmis Islem Sinyalleri Kayit Defteri" tablosuyla AYNI
     # entries_df kullanilir - boylece grafikte gorunen isaretler ile tablodaki satirlar
     # birebir eslesir (kullanici "panelde yazan butun analizleri grafikte de goster" istedi).
-    # ONEMLI - OK STILI: Kullanicinin referans verdigi gorseldeki gibi ince govdeli, acik "V"
-    # basli, kucuk cizgi-ok gorunumu icin Plotly'nin "arrow-up/arrow-down" marker sembolleri
-    # (dolu, kompakt bir isaretci - referanstaki ince ok cizgisiyle eslesmiyordu) yerine
-    # gercek Plotly ANNOTATION oku (add_annotation + arrowhead) kullanildi; bu, tam olarak
-    # referans gorseldeki gibi ince bir govde + acik ok basi cizer. Hover/tiklama icin ayni
-    # noktada GORUNMEZ (opacity=0) bir Scatter isaretcisi altta tutuluyor.
+    # ONEMLI - KUTUCUK + OK: Kullanicinin istedigi eski "AI LONG/SHORT | %XX TP:.. SL:.."
+    # etiket kutulari, kok neden (is_entry filtresiyle sadece GERCEK giris ani isaretleniyor,
+    # pozisyonun acik oldugu her mum degil) zaten cozuldugu icin geri getirildi. Kutucuklarin
+    # yine de UST USTE binmemesi icin, birbirine yakin (ayni yonde, birkac mum arayla) gelen
+    # girisler arasinda dikey kademe (stagger) uygulaniyor - yakin girisler farkli yukseklige
+    # itiliyor, uzak girisler taban yuksekligine donuyor.
+    # ONEMLI: Grafik ~1500 mumu dar bir alana sikistirdigi icin 1 piksel ~2-3 muma denk geliyor;
+    # bir etiket kutusu (~90px) yatayda ~250 mumluk alan kaplıyor. Bu yuzden "yakinlik" esigi
+    # (close_gap) mum sayisi olarak COK genis tutulmali, aksi halde kutular ayni yukseklige
+    # denk gelip ust uste biniyor.
+    def _stagger_offsets(idx_values: pd.DatetimeIndex, base: int, step: int, tiers: int = 5, close_gap: int = 220) -> list:
+        positions = df.index.get_indexer(idx_values)
+        order = np.argsort(positions)  # kronolojik (zaman) sirasina gore indeksler
+        tiers_sorted = np.zeros(len(positions), dtype=int)
+        tier, prev_pos = 0, None
+        for orig_i in order:
+            pos = positions[orig_i]
+            tier = (tier + 1) % tiers if (prev_pos is not None and (pos - prev_pos) <= close_gap) else 0
+            tiers_sorted[orig_i] = tier
+            prev_pos = pos
+        return [base + int(t) * step for t in tiers_sorted]
+
+    # ONEMLI - UST USTE BINME: Tum girisler icin etiket kutusu basmak, sinyallerin sik geldigi
+    # bolgelerde kutulari ust uste bindiriyordu. Bu yuzden SADECE en guncel BOX_LIMIT adet
+    # sinyal etiket kutusu (AI LONG/SHORT | %.. TP/SL) alir; daha eski sinyaller sadece kucuk
+    # ok isareti olarak gosterilir (detaylari alttaki kayit defteri tablosunda ve hover'da
+    # zaten mevcut). Bu, kullanicinin referans gorselindeki kutucuk yogunluguna da uyuyor.
+    BOX_LIMIT = 6
+    box_index_set = set(entries_df.sort_index().index[-BOX_LIMIT:]) if (entries_df is not None and not entries_df.empty) else set()
+
     if entries_df is not None and not entries_df.empty:
         long_e = entries_df[entries_df["ai_signal"] == "LONG"]
         short_e = entries_df[entries_df["ai_signal"] == "SHORT"]
@@ -487,13 +511,13 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
                 showlegend=False,
             ), row=1, col=1)
-            for xi, yi in zip(long_e.index, long_y):
-                # ONEMLI: Ince tek cizgi duz/amator gorunuyordu. Once biraz daha kalin KOYU
-                # (arka plan rengiyle ayni) bir "halo" cizgisi, ustune ince renkli cizgi
-                # basiliyor - bu, profesyonel grafik araclarindaki gibi hafif bir kontur/derinlik
-                # hissi verip her turlu mum renginin ustunde net secilmesini sagliyor.
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.6, arrowcolor="#0b0e14", ax=0, ay=15, standoff=1, row=1, col=1)
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=15, standoff=1, row=1, col=1)
+            long_offsets = _stagger_offsets(long_e.index, base=38, step=55)
+            for xi, yi, prob, tp_v, sl_v, ay_off in zip(long_e.index, long_y, long_e["prob_long"], long_e["active_tp"], long_e["active_sl"], long_offsets):
+                if xi in box_index_set:
+                    box_text = f"<b>AI LONG</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
+                    fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(34,197,94,0.14)", bordercolor="rgba(34,197,94,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
+                else:
+                    fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=15, standoff=1, row=1, col=1)
 
         if not short_e.empty:
             short_y = short_e["high"] + (short_e["atr"] * 0.3)
@@ -512,9 +536,13 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
                 showlegend=False,
             ), row=1, col=1)
-            for xi, yi in zip(short_e.index, short_y):
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=2.6, arrowcolor="#0b0e14", ax=0, ay=-15, standoff=1, row=1, col=1)
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=-15, standoff=1, row=1, col=1)
+            short_offsets = _stagger_offsets(short_e.index, base=-38, step=-55)
+            for xi, yi, prob, tp_v, sl_v, ay_off in zip(short_e.index, short_y, short_e["prob_short"], short_e["active_tp"], short_e["active_sl"], short_offsets):
+                if xi in box_index_set:
+                    box_text = f"<b>AI SHORT</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
+                    fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(239,68,68,0.14)", bordercolor="rgba(239,68,68,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
+                else:
+                    fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=-15, standoff=1, row=1, col=1)
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8
