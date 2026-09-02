@@ -2,6 +2,30 @@ import streamlit as st
 
 st.set_page_config(page_title="Analiz Tahmini", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
+# ONEMLI - Yenilemede yanip sonme (flas) fix: bu sayfadaki @st.fragment(run_every=...)
+# bloklari her yenilendiginde Streamlit, eskimis ("stale") icerigi soluklastirip iskelet
+# animasyonu gosteriyor; bu goze batan bir yanip sonme etkisi yaratiyordu. Asagidaki
+# kurallar bu gecici gorsel durumlari devre disi birakiyor.
+st.markdown("""
+<style>
+    [data-testid="stHeader"] { background: transparent !important; }
+    footer,
+    [data-testid="stStatusWidget"], [data-testid="stAppRunningIndicator"],
+    [data-testid="stDecoration"], #stDecoration,
+    [data-testid="stAppDeployButton"], .stDeployButton { display: none !important; }
+    [data-testid="stSpinner"], .stSpinner { display: none !important; }
+
+    [data-testid="stSkeleton"], .stSkeleton, [class*="skeleton" i] { animation: none !important; opacity: 1 !important; }
+    [data-stale="true"] { opacity: 1 !important; transition: none !important; filter: none !important; }
+    .element-container, [data-testid="stElementContainer"],
+    [data-testid="stVerticalBlock"], [data-testid="stHorizontalBlock"] { transition: none !important; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+    }
+</style>
+""", unsafe_allow_html=True)
+
 import sys
 import codecs
 try:

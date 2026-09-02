@@ -71,6 +71,26 @@ PREMIUM_CSS = """
     .metric-card .value { font-size: 1.15rem; font-weight: 800; margin: 0; }
     
     .green { color: #22ab94; } .red { color: #f7525f; } .blue { color: #2962ff; } .white { color: #d1d4dc; }
+
+    /* --- Yenilemede yanip sonme (flas) fix: fragment run_every yenilemesinde
+       Streamlit'in "eskimis/stale" iceriği soluklastirip iskelet animasyonu gostermesi
+       goze batan bir yanip sonme etkisi yaratiyordu. Asagidaki kurallar bu gecici
+       gorsel durumlari devre disi birakiyor. --- */
+    [data-testid="stHeader"] { background: transparent !important; }
+    footer,
+    [data-testid="stStatusWidget"], [data-testid="stAppRunningIndicator"],
+    [data-testid="stDecoration"], #stDecoration,
+    [data-testid="stAppDeployButton"], .stDeployButton { display: none !important; }
+    [data-testid="stSpinner"], .stSpinner { display: none !important; }
+
+    [data-testid="stSkeleton"], .stSkeleton, [class*="skeleton" i] { animation: none !important; opacity: 1 !important; }
+    [data-stale="true"] { opacity: 1 !important; transition: none !important; filter: none !important; }
+    .element-container, [data-testid="stElementContainer"],
+    [data-testid="stVerticalBlock"], [data-testid="stHorizontalBlock"] { transition: none !important; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+    }
 </style>
 """
 st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
