@@ -470,7 +470,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
             fig.add_trace(go.Scatter(
                 x=long_e.index, y=long_e["low"] - (long_e["atr"] * 0.3),
                 mode="markers", name="AI LONG",
-                marker=dict(symbol="triangle-up", size=16, color="#22ab94", line=dict(width=1, color="#0b0e14")),
+                marker=dict(symbol="arrow-up", size=11, color="#22ab94", line=dict(width=1, color="#0b0e14")),
                 customdata=np.stack([
                     long_e.index.strftime("%Y-%m-%d %H:%M"),
                     ["LONG"] * len(long_e),
@@ -487,7 +487,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
             fig.add_trace(go.Scatter(
                 x=short_e.index, y=short_e["high"] + (short_e["atr"] * 0.3),
                 mode="markers", name="AI SHORT",
-                marker=dict(symbol="triangle-down", size=16, color="#f7525f", line=dict(width=1, color="#0b0e14")),
+                marker=dict(symbol="arrow-down", size=11, color="#f7525f", line=dict(width=1, color="#0b0e14")),
                 customdata=np.stack([
                     short_e.index.strftime("%Y-%m-%d %H:%M"),
                     ["SHORT"] * len(short_e),
