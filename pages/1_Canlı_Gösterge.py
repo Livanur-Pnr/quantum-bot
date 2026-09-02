@@ -1280,16 +1280,26 @@ with st.sidebar:
     active_secret_key = os.getenv(f"{selected_exchange_id.upper()}_SECRET_KEY", "").strip()
 
     wallet_balance_val = 0.0
+    ignore_wallet_for_budget = False
     if active_api_key and active_secret_key:
         bal = fetch_binance_account_balance(selected_exchange_id, active_api_key, active_secret_key)
         if bal["status"] == "FUTURES_OK":
             wallet_balance_val = bal['wallet_balance']
             st.success(f"🟢 Private API: VADELİ BAĞLI & HAZIR\n\n💰 Vadeli Cüzdan: ${wallet_balance_val:,.2f} USDT")
+            ignore_wallet_for_budget = st.checkbox(
+                "🔓 Kasa sınırı olmadan genel analiz yap",
+                value=False,
+                help="İşaretlerseniz Bütçe/Marjin alanı gerçek cüzdan bakiyenizle sınırlanmaz; TP/SL hesaplamaları kasanızdan bağımsız, sadece genel bir analiz olarak yapılır."
+            )
         else:
             st.warning(" API Anahtarı Algılandı Fakat Yetki Reddedildi (IP kısıtlaması veya geçersiz anahtar)")
     else:
         st.warning(" Private API: BAĞLI DEĞİL (Yalnızca Sinyal Modu)")
         st.caption("📌 Proje klasörünüzdeki `.env` dosyasına API anahtarınızı girip kaydedin VEYA yukarıdaki menüye yapıştırın.")
+
+    # "Kasa sinirlamasi" sadece butce ust sinirini belirlerken kullanilir; cuzdan bakiyesi
+    # (wallet_balance_val) yine de Sermaye & Kasa Takip Panelinde bilgi amacli gosterilmeye devam eder.
+    budget_cap_balance = 0.0 if ignore_wallet_for_budget else wallet_balance_val
         
     st.markdown("---")
     st.markdown("### 💵 Sermaye & Kasa Takip Paneli")
@@ -1402,13 +1412,19 @@ with col_lev:
     selected_leverage = st.selectbox("⚡ Kaldıraç:", leverage_options, index=4, format_func=lambda x: f"{x}x")
 
 with col_budget:
-    # ONEMLI: API baglantisi varsa, kullaniciyi gercekte sahip olmadigi bir tutari marjin
-    # olarak girmekten (imkansiz/tehlikeli bir islem varsayimindan) korumak icin butce,
-    # gercek cuzdan bakiyesiyle sinirlandirilir.
-    if wallet_balance_val > 0:
-        _budget_max = max(wallet_balance_val, 10.0)
-        _budget_default = min(wallet_balance_val, 100.0) if wallet_balance_val >= 10.0 else wallet_balance_val
-        margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=10.0, max_value=_budget_max, value=float(_budget_default), step=50.0, format="%.0f", help=f"Bağlı hesap bakiyeniz ${wallet_balance_val:,.2f} — bu tutarı aşamazsınız.")
+    # ONEMLI: API baglantisi varsa VE kullanici "kasa siniri olmadan genel analiz" secmediyse,
+    # kullaniciyi gercekte sahip olmadigi bir tutari marjin olarak girmekten (imkansiz/tehlikeli
+    # bir islem varsayimindan) korumak icin butce, gercek cuzdan bakiyesiyle sinirlandirilir.
+    if budget_cap_balance > 0:
+        # ONEMLI: Bakiye 10$'in altinda (orn. $0.10) olabilir - bu durumda sabit "min_value=10.0"
+        # kullanmak, varsayilan deger min_value'nin altinda kalip StreamlitAPIException firlatiyordu.
+        # Alt/ust sinir ve varsayilan deger, gercek bakiyeye gore dinamik olarak ayarlanir.
+        _budget_max = max(budget_cap_balance, 0.01)
+        _budget_min = min(10.0, _budget_max)
+        _budget_default = _budget_max
+        _budget_step = 50.0 if _budget_max >= 50 else max(_budget_max / 10.0, 0.01)
+        _budget_fmt = "%.0f" if _budget_max >= 10 else "%.2f"
+        margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=_budget_min, max_value=_budget_max, value=float(_budget_default), step=_budget_step, format=_budget_fmt, help=f"Bağlı hesap bakiyeniz ${budget_cap_balance:,.2f} — bu tutarı aşamazsınız.")
     else:
         margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=10.0, max_value=100000.0, value=100.0, step=50.0, format="%.0f")
 
