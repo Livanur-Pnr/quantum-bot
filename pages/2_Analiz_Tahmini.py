@@ -460,17 +460,22 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     # ONEMLI: Asagida ALTTAKI "Gecmis Islem Sinyalleri Kayit Defteri" tablosuyla AYNI
     # entries_df kullanilir - boylece grafikte gorunen isaretler ile tablodaki satirlar
     # birebir eslesir (kullanici "panelde yazan butun analizleri grafikte de goster" istedi).
-    # Etiketler artik sabit metin kutusu yerine kucuk, tiklanabilir (hover ile detay gosteren)
-    # ucgen isaretciler - boylece cok sayida giris olsa bile ust uste binip okunmaz hale gelmiyor.
+    # ONEMLI - OK STILI: Kullanicinin referans verdigi gorseldeki gibi ince govdeli, acik "V"
+    # basli, kucuk cizgi-ok gorunumu icin Plotly'nin "arrow-up/arrow-down" marker sembolleri
+    # (dolu, kompakt bir isaretci - referanstaki ince ok cizgisiyle eslesmiyordu) yerine
+    # gercek Plotly ANNOTATION oku (add_annotation + arrowhead) kullanildi; bu, tam olarak
+    # referans gorseldeki gibi ince bir govde + acik ok basi cizer. Hover/tiklama icin ayni
+    # noktada GORUNMEZ (opacity=0) bir Scatter isaretcisi altta tutuluyor.
     if entries_df is not None and not entries_df.empty:
         long_e = entries_df[entries_df["ai_signal"] == "LONG"]
         short_e = entries_df[entries_df["ai_signal"] == "SHORT"]
 
         if not long_e.empty:
+            long_y = long_e["low"] - (long_e["atr"] * 0.3)
             fig.add_trace(go.Scatter(
-                x=long_e.index, y=long_e["low"] - (long_e["atr"] * 0.3),
+                x=long_e.index, y=long_y,
                 mode="markers", name="AI LONG",
-                marker=dict(symbol="arrow-up", size=11, color="#22ab94", line=dict(width=1, color="#0b0e14")),
+                marker=dict(size=14, color="#22ab94", opacity=0.001),
                 customdata=np.stack([
                     long_e.index.strftime("%Y-%m-%d %H:%M"),
                     ["LONG"] * len(long_e),
@@ -482,12 +487,15 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
                 showlegend=False,
             ), row=1, col=1)
+            for xi, yi in zip(long_e.index, long_y):
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.1, arrowwidth=1.6, arrowcolor="#22ab94", ax=0, ay=13, standoff=1, row=1, col=1)
 
         if not short_e.empty:
+            short_y = short_e["high"] + (short_e["atr"] * 0.3)
             fig.add_trace(go.Scatter(
-                x=short_e.index, y=short_e["high"] + (short_e["atr"] * 0.3),
+                x=short_e.index, y=short_y,
                 mode="markers", name="AI SHORT",
-                marker=dict(symbol="arrow-down", size=11, color="#f7525f", line=dict(width=1, color="#0b0e14")),
+                marker=dict(size=14, color="#f7525f", opacity=0.001),
                 customdata=np.stack([
                     short_e.index.strftime("%Y-%m-%d %H:%M"),
                     ["SHORT"] * len(short_e),
@@ -499,6 +507,8 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
                 showlegend=False,
             ), row=1, col=1)
+            for xi, yi in zip(short_e.index, short_y):
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.1, arrowwidth=1.6, arrowcolor="#f7525f", ax=0, ay=-13, standoff=1, row=1, col=1)
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8 
@@ -693,7 +703,7 @@ def main():
 
         table_cd = None
         if not entries_df.empty:
-            st.caption(f"Yapay zekanın bu coin/zaman dilimi için ürettiği son {len(entries_df)} giriş sinyali (en yeni en üstte). Yeni bir sinyal oluştuğunda otomatik olarak buraya eklenir. Bir satıra (veya grafikteki üçgen işaretçilerden birine) tıklayarak o sinyalin ayrıntılarını aşağıda görebilirsiniz.")
+            st.caption(f"Yapay zekanın bu coin/zaman dilimi için ürettiği son {len(entries_df)} giriş sinyali (en yeni en üstte). Yeni bir sinyal oluştuğunda otomatik olarak buraya eklenir. Bir satıra (veya grafikteki ok işaretçilerinden birine) tıklayarak o sinyalin ayrıntılarını aşağıda görebilirsiniz.")
 
             display_rows = []
             for idx, row in entries_df.iterrows():
