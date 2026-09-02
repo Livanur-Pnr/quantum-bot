@@ -1261,7 +1261,7 @@ with st.sidebar:
     
 
 # --- 7. BAŞLIK VE KONTROL PANELİ ---
-st.title("⚡ Pro-Quantum Trading Terminal (MEXC AI Quant Engine)")
+st.title("⚡ Canlı Gösterge")
 
 # Favori coin butonları için session state başlat
 if "active_symbol_query" not in st.session_state:

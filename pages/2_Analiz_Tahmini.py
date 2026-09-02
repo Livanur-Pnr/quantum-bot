@@ -173,8 +173,23 @@ def fetch_crypto_data(exchange_id: str, symbol: str, timeframe: str, limit: int 
             base = symbol.split("/")[0].replace("USDT", "")
             symbol = f"{base}/USDT:USDT"
 
-        ohlcv = ex.fetch_ohlcv(symbol, timeframe, limit=limit)
-        
+        # ONEMLI: MEXC API'si arada bir (agir yuk/gecici ag aksakligi) tek seferlik basarisiz
+        # yanit donebiliyor. Once hemen hata gostermek yerine kisa bir bekleme ile 2 kez daha
+        # deneyip, sadece gercekten israrli bir sorun varsa hata gosteriyoruz. Bu, kullaniciya
+        # her yenilemede gereksiz kirmizi hata kutusu cikmasini onluyor.
+        ohlcv = None
+        last_err = None
+        for attempt in range(3):
+            try:
+                ohlcv = ex.fetch_ohlcv(symbol, timeframe, limit=limit)
+                break
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    time.sleep(1.5)
+        if ohlcv is None:
+            raise last_err
+
         try: ob = ex.fetch_order_book(symbol, limit=20)
         except Exception: ob = None
 
