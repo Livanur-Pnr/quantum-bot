@@ -450,26 +450,55 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
 
 def format_price(p): return f"{p:.4f}" if p < 10 else f"{p:.2f}"
 
-def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: float, timeframe: str = "") -> go.Figure:
+def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: float, timeframe: str = "", entries_df: pd.DataFrame = None) -> go.Figure:
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], increasing_line_color="#22ab94", decreasing_line_color="#f7525f", increasing_fillcolor="#22ab94", decreasing_fillcolor="#f7525f", name="Fiyat"), row=1, col=1)
     fig.add_trace(go.Scattergl(x=df.index, y=df['prob_long'], mode='lines', line=dict(color='#22ab94', width=2), name='LONG %', fill='tozeroy', fillcolor='rgba(34, 171, 148, 0.1)'), row=2, col=1)
     fig.add_trace(go.Scattergl(x=df.index, y=df['prob_short'], mode='lines', line=dict(color='#f7525f', width=2), name='SHORT %', fill='tozeroy', fillcolor='rgba(247, 82, 95, 0.1)'), row=2, col=1)
     fig.add_hline(y=threshold, line_dash="dot", line_color="#d1d4dc", opacity=0.7, row=2, col=1)
 
-    # ONEMLI: Etiketler artik SADECE gercek giris anini ("is_entry") isaretliyor; onceden
-    # pozisyonun acik oldugu HER mum "ai_signal" tasidigindan, tek bir islem icin onlarca
-    # kutucuk ust uste biniyordu. Artik her islem icin tam olarak TEK kutucuk basiliyor.
-    recent_df = df.tail(300)
-    entry_df = recent_df[recent_df.get("is_entry", False) == True] if "is_entry" in recent_df.columns else recent_df.iloc[0:0]
-    for idx, row in entry_df[entry_df["ai_signal"] == "LONG"].iterrows():
-        if idx != df.index[-1]:
-            text = f"<b>AI LONG</b> | %{row['prob_long']:.1f}<br>TP: {format_price(row['active_tp'])} | SL: {format_price(row['active_sl'])}"
-            fig.add_annotation(x=idx, y=row["low"]-(row["atr"]*0.3), text=text, showarrow=True, arrowhead=2, arrowcolor="#22ab94", ax=0, ay=40, font=dict(size=9, color="#d1d4dc"), bgcolor="rgba(34,171,148,0.15)", bordercolor="rgba(34,171,148,0.8)", borderwidth=1, row=1, col=1)
-    for idx, row in entry_df[entry_df["ai_signal"] == "SHORT"].iterrows():
-        if idx != df.index[-1]:
-            text = f"<b>AI SHORT</b> | %{row['prob_short']:.1f}<br>TP: {format_price(row['active_tp'])} | SL: {format_price(row['active_sl'])}"
-            fig.add_annotation(x=idx, y=row["high"]+(row["atr"]*0.3), text=text, showarrow=True, arrowhead=2, arrowcolor="#f7525f", ax=0, ay=-40, font=dict(size=9, color="#d1d4dc"), bgcolor="rgba(247,82,95,0.15)", bordercolor="rgba(247,82,95,0.8)", borderwidth=1, row=1, col=1)
+    # ONEMLI: Asagida ALTTAKI "Gecmis Islem Sinyalleri Kayit Defteri" tablosuyla AYNI
+    # entries_df kullanilir - boylece grafikte gorunen isaretler ile tablodaki satirlar
+    # birebir eslesir (kullanici "panelde yazan butun analizleri grafikte de goster" istedi).
+    # Etiketler artik sabit metin kutusu yerine kucuk, tiklanabilir (hover ile detay gosteren)
+    # ucgen isaretciler - boylece cok sayida giris olsa bile ust uste binip okunmaz hale gelmiyor.
+    if entries_df is not None and not entries_df.empty:
+        long_e = entries_df[entries_df["ai_signal"] == "LONG"]
+        short_e = entries_df[entries_df["ai_signal"] == "SHORT"]
+
+        if not long_e.empty:
+            fig.add_trace(go.Scatter(
+                x=long_e.index, y=long_e["low"] - (long_e["atr"] * 0.3),
+                mode="markers", name="AI LONG",
+                marker=dict(symbol="triangle-up", size=16, color="#22ab94", line=dict(width=1, color="#0b0e14")),
+                customdata=np.stack([
+                    long_e.index.strftime("%Y-%m-%d %H:%M"),
+                    ["LONG"] * len(long_e),
+                    long_e["prob_long"].map(lambda v: f"{v:.1f}"),
+                    long_e["close"].map(format_price),
+                    long_e["active_tp"].map(format_price),
+                    long_e["active_sl"].map(format_price),
+                ], axis=-1),
+                hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
+                showlegend=False,
+            ), row=1, col=1)
+
+        if not short_e.empty:
+            fig.add_trace(go.Scatter(
+                x=short_e.index, y=short_e["high"] + (short_e["atr"] * 0.3),
+                mode="markers", name="AI SHORT",
+                marker=dict(symbol="triangle-down", size=16, color="#f7525f", line=dict(width=1, color="#0b0e14")),
+                customdata=np.stack([
+                    short_e.index.strftime("%Y-%m-%d %H:%M"),
+                    ["SHORT"] * len(short_e),
+                    short_e["prob_short"].map(lambda v: f"{v:.1f}"),
+                    short_e["close"].map(format_price),
+                    short_e["active_tp"].map(format_price),
+                    short_e["active_sl"].map(format_price),
+                ], axis=-1),
+                hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
+                showlegend=False,
+            ), row=1, col=1)
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8 
@@ -619,8 +648,39 @@ def main():
                 <p style="color:#5d606b; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p></div>'''
         st.markdown(stat_html, unsafe_allow_html=True)
     
-        fig = build_realtime_chart(df.tail(300).copy(), ai_threshold, tp_m, sl_m, timeframe=tf)
-        st.plotly_chart(fig, use_container_width=True, height=850, config={'displayModeBar': False, 'scrollZoom': True})
+        # ONEMLI: Grafikteki isaretler ile alttaki "Gecmis Islem Sinyalleri Kayit Defteri"
+        # tablosu artik TAM AYNI veriyi (entries_df) kullanir - bu yuzden entries_df, tabloyu
+        # olusturmadan ONCE, grafige de parametre olarak verilmek uzere burada hesaplanir.
+        # Boylece grafikte gorunen HER isaret, tabloda da bir satir olarak karsimiza cikar.
+        entries_df = df[df.get("is_entry", False) == True].copy() if "is_entry" in df.columns else df.iloc[0:0]
+        entries_df = entries_df.sort_index(ascending=False).head(100)
+
+        fig = build_realtime_chart(df.copy(), ai_threshold, tp_m, sl_m, timeframe=tf, entries_df=entries_df)
+
+        # ONEMLI: on_select="rerun" + selection_mode=("points",) sayesinde, grafikteki bir
+        # ucgen isaretcisine TIKLANDIGINDA o noktanin customdata'si (zaman/yon/guven/giris/TP/SL)
+        # geri doner ve asagida ayrintili bir "kutu" olarak gosterilir - kullanicinin istedigi
+        # "isaretin ustune tiklayinca bilgi kutusu acilsin" davranisi bu sekilde saglaniyor.
+        chart_event = st.plotly_chart(
+            fig, use_container_width=True, height=850,
+            config={'displayModeBar': False, 'scrollZoom': True},
+            on_select="rerun", selection_mode=("points",),
+            key=f"realtime_chart_{symbol}_{tf}",
+        )
+
+        clicked_points = []
+        if chart_event and chart_event.get("selection", {}).get("points"):
+            clicked_points = chart_event["selection"]["points"]
+
+        # ONEMLI: Ayni x konumunda mum (Fiyat) serisi de bulundugundan, "x unified" hover modu
+        # tiklamada BIRDEN FAZLA nokta doner (biri isaretci, digeri altindaki mum - customdata'si
+        # olmayan). Bu yuzden ilk noktayi degil, customdata'si OLAN ilk noktayi ariyoruz.
+        cd = None
+        for _pt in clicked_points:
+            _cd = _pt.get("customdata")
+            if _cd and len(_cd) >= 6:
+                cd = _cd
+                break
 
         # ONEMLI: Grafikteki kutucuklar cok sik oldugunda ust uste binip okunmaz hale
         # geliyordu. Bunun icin grafigin ALTINA, su ana kadar uretilen TUM giris sinyallerini
@@ -631,48 +691,82 @@ def main():
         st.markdown("---")
         st.markdown("## 📜 Geçmiş İşlem Sinyalleri Kayıt Defteri")
 
-        entries_df = df[df.get("is_entry", False) == True].copy() if "is_entry" in df.columns else df.iloc[0:0]
+        table_cd = None
         if not entries_df.empty:
-            entries_df = entries_df.sort_index(ascending=False).head(100)
-            st.caption(f"Yapay zekanın bu coin/zaman dilimi için ürettiği son {len(entries_df)} giriş sinyali (en yeni en üstte). Yeni bir sinyal oluştuğunda otomatik olarak buraya eklenir.")
+            st.caption(f"Yapay zekanın bu coin/zaman dilimi için ürettiği son {len(entries_df)} giriş sinyali (en yeni en üstte). Yeni bir sinyal oluştuğunda otomatik olarak buraya eklenir. Bir satıra (veya grafikteki üçgen işaretçilerden birine) tıklayarak o sinyalin ayrıntılarını aşağıda görebilirsiniz.")
 
-            rows_html = ""
+            display_rows = []
             for idx, row in entries_df.iterrows():
                 is_long_row = row["ai_signal"] == "LONG"
-                dir_color = "#22ab94" if is_long_row else "#f7525f"
-                dir_label = "🟢 LONG" if is_long_row else "🔴 SHORT"
                 conf = row["prob_long"] if is_long_row else row["prob_short"]
-                ts = idx.strftime("%Y-%m-%d %H:%M") if hasattr(idx, "strftime") else str(idx)
-                rows_html += f"""
-                <tr style="border-bottom:1px solid #1c212d;">
-                    <td style="padding:8px 12px; color:#94a3b8; font-size:12px; white-space:nowrap;">{ts}</td>
-                    <td style="padding:8px 12px; font-weight:bold; color:{dir_color}; white-space:nowrap;">{dir_label}</td>
-                    <td style="padding:8px 12px; color:#d1d4dc;">%{conf:.1f}</td>
-                    <td style="padding:8px 12px; color:#d1d4dc;">{format_price(row['close'])}</td>
-                    <td style="padding:8px 12px; color:#22ab94;">{format_price(row['active_tp'])}</td>
-                    <td style="padding:8px 12px; color:#f7525f;">{format_price(row['active_sl'])}</td>
-                </tr>"""
+                display_rows.append({
+                    "Tarih / Saat": idx.strftime("%Y-%m-%d %H:%M") if hasattr(idx, "strftime") else str(idx),
+                    "Yön": "🟢 LONG" if is_long_row else "🔴 SHORT",
+                    "Güven": f"%{conf:.1f}",
+                    "Giriş": format_price(row["close"]),
+                    "TP": format_price(row["active_tp"]),
+                    "SL": format_price(row["active_sl"]),
+                })
+            display_df = pd.DataFrame(display_rows)
 
-            table_html = f"""
-            <div style="max-height:420px; overflow-y:auto; border:1px solid #1c212d; border-radius:8px;">
-            <table style="width:100%; border-collapse:collapse; font-size:13px;">
-                <thead style="position:sticky; top:0; background:#0b0e14; z-index:1;">
-                    <tr style="border-bottom:1px solid #2a2e39;">
-                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Tarih / Saat</th>
-                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Yön</th>
-                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Güven</th>
-                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">Giriş</th>
-                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">TP</th>
-                        <th style="padding:8px 12px; text-align:left; color:#94a3b8; text-transform:uppercase; font-size:11px;">SL</th>
-                    </tr>
-                </thead>
-                <tbody>{rows_html}</tbody>
-            </table>
-            </div>
-            """
-            st.markdown(table_html, unsafe_allow_html=True)
+            # ONEMLI: Grafikteki ucgen isaretcilere tiklamanin Streamlit'e dogru sekilde
+            # iletilmesi Plotly'nin kendi secim/olay zincirine bagli oldugundan (bazi
+            # ortamlarda gecikme/gecikme sorunlari yasanabiliyor); bu yuzden AYNI tiklama
+            # davranisini garanti eden ikinci, saglam bir yol olarak tablo satirlari da
+            # on_select="rerun" ile tiklanabilir yapildi - kullanici herhangi bir satira
+            # tiklayinca o sinyalin detay kutusu asagida acilir.
+            table_event = st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                height=420,
+                on_select="rerun",
+                selection_mode="single-row",
+                key=f"entries_table_{symbol}_{tf}",
+            )
+
+            sel_rows = []
+            if table_event and table_event.get("selection", {}).get("rows"):
+                sel_rows = table_event["selection"]["rows"]
+
+            if sel_rows:
+                sel_idx = sel_rows[0]
+                if 0 <= sel_idx < len(entries_df):
+                    row = entries_df.iloc[sel_idx]
+                    idx_val = entries_df.index[sel_idx]
+                    is_long_row = row["ai_signal"] == "LONG"
+                    conf = row["prob_long"] if is_long_row else row["prob_short"]
+                    table_cd = [
+                        idx_val.strftime("%Y-%m-%d %H:%M") if hasattr(idx_val, "strftime") else str(idx_val),
+                        "LONG" if is_long_row else "SHORT",
+                        f"{conf:.1f}",
+                        format_price(row["close"]),
+                        format_price(row["active_tp"]),
+                        format_price(row["active_sl"]),
+                    ]
         else:
             st.caption("Bu coin/zaman diliminde henüz eşik üzerinde bir giriş sinyali oluşmadı.")
+
+        # Tablo satır tıklaması, grafik işaretçi tıklamasından önceliklidir (daha güvenilir
+        # şekilde doğrulanabiliyor); grafik tıklaması çalışırsa o da aynı kutuyu besler.
+        final_cd = table_cd or cd
+        if final_cd:
+            ts_c, dir_c, conf_c, entry_c, tp_c, sl_c = final_cd[:6]
+            dir_color_c = "#22ab94" if dir_c == "LONG" else "#f7525f"
+            dir_label_c = "🟢 LONG" if dir_c == "LONG" else "🔴 SHORT"
+            st.markdown(f"""
+            <div style="background:#131722; border:2px solid {dir_color_c}; border-radius:10px; padding:16px 20px; margin-top:10px;">
+                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold; margin-bottom:10px;">🔎 Seçilen Sinyal Detayı</div>
+                <div style="display:flex; flex-wrap:wrap; gap:28px; align-items:center;">
+                    <div><span style="color:#787b86; font-size:11px;">YÖN</span><br><b style="color:{dir_color_c}; font-size:15px;">{dir_label_c}</b></div>
+                    <div><span style="color:#787b86; font-size:11px;">ZAMAN</span><br><b style="color:#d1d4dc; font-size:15px;">{ts_c}</b></div>
+                    <div><span style="color:#787b86; font-size:11px;">GÜVEN</span><br><b style="color:#d1d4dc; font-size:15px;">%{conf_c}</b></div>
+                    <div><span style="color:#787b86; font-size:11px;">GİRİŞ</span><br><b style="color:#d1d4dc; font-size:15px;">{entry_c}</b></div>
+                    <div><span style="color:#787b86; font-size:11px;">TP</span><br><b style="color:#22ab94; font-size:15px;">{tp_c}</b></div>
+                    <div><span style="color:#787b86; font-size:11px;">SL</span><br><b style="color:#f7525f; font-size:15px;">{sl_c}</b></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
     render_classic_terminal()
 
