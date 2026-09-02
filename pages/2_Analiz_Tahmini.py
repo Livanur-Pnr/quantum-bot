@@ -488,7 +488,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 showlegend=False,
             ), row=1, col=1)
             for xi, yi in zip(long_e.index, long_y):
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.1, arrowwidth=1.6, arrowcolor="#22ab94", ax=0, ay=13, standoff=1, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.2, arrowwidth=2.2, arrowcolor="#00ff8c", ax=0, ay=13, standoff=1, row=1, col=1)
 
         if not short_e.empty:
             short_y = short_e["high"] + (short_e["atr"] * 0.3)
@@ -508,7 +508,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
                 showlegend=False,
             ), row=1, col=1)
             for xi, yi in zip(short_e.index, short_y):
-                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.1, arrowwidth=1.6, arrowcolor="#f7525f", ax=0, ay=-13, standoff=1, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.2, arrowwidth=2.2, arrowcolor="#ff2d55", ax=0, ay=-13, standoff=1, row=1, col=1)
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8 
