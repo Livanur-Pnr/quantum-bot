@@ -7,26 +7,20 @@ try:
         sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
     if sys.stderr.encoding.lower() != 'utf-8':
         sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
-except:
+except Exception:
     pass
 
 import pandas as pd
 import numpy as np
 import requests
-import urllib3
 import time
 from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier, VotingClassifier
 
-import hmac
-import hashlib
 import os
-import math
 import difflib
 import ccxt
-
-# SSL uyarılarını bastır ve performans ayarları
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from dotenv import load_dotenv
 
 # --- MEXC GÜVENLİ KİMLİK DOĞRULAMA VE OTOMATİK İŞLEM MOTORU (CCXT) ---
 
@@ -43,7 +37,8 @@ def fetch_macro_data() -> tuple:
             df_fg['date_str'] = df_fg['timestamp'].dt.strftime('%Y-%m-%d')
             df_fg['fear_greed'] = df_fg['value'].astype(float)
             return df_fg[['date_str', 'fear_greed']]
-        except: return pd.DataFrame()
+        except Exception:
+            return pd.DataFrame()
 
     def get_dxy():
         try:
@@ -57,7 +52,8 @@ def fetch_macro_data() -> tuple:
             dxy['date_str'] = pd.to_datetime(dxy[date_col], utc=True).dt.strftime('%Y-%m-%d')
             dxy['dxy'] = dxy['Close'].astype(float)
             return dxy[['date_str', 'dxy']]
-        except: return pd.DataFrame()
+        except Exception:
+            return pd.DataFrame()
 
     def get_spy():
         try:
@@ -71,7 +67,8 @@ def fetch_macro_data() -> tuple:
             spy['date_str'] = pd.to_datetime(spy[date_col], utc=True).dt.strftime('%Y-%m-%d')
             spy['spy'] = spy['Close'].astype(float)
             return spy[['date_str', 'spy']]
-        except: return pd.DataFrame()
+        except Exception:
+            return pd.DataFrame()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         f_fg = executor.submit(get_fg)
@@ -79,24 +76,25 @@ def fetch_macro_data() -> tuple:
         f_spy = executor.submit(get_spy)
         
         try: fg_df = f_fg.result(timeout=35)
-        except: fg_df = pd.DataFrame()
+        except Exception: fg_df = pd.DataFrame()
         try: dxy_df = f_dxy.result(timeout=35)
-        except: dxy_df = pd.DataFrame()
+        except Exception: dxy_df = pd.DataFrame()
         try: spy_df = f_spy.result(timeout=35)
-        except: spy_df = pd.DataFrame()
+        except Exception: spy_df = pd.DataFrame()
         
     return fg_df, dxy_df, spy_df
 
 
 def load_env_credentials() -> dict:
-    import os
+    # Proje kök dizini: bu dosya pages/ altinda oldugu icin bir ust klasore cikilir.
+    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    load_dotenv(os.path.join(project_dir, ".env"))
+
     api_key = os.getenv("MEXC_API_KEY", "").strip()
     secret_key = os.getenv("MEXC_SECRET_KEY", "").strip()
-    
-    import os
-    project_dir = os.path.dirname(__file__)
-    possible_files = [".env", "MEXC API ADRESLERİ.txt", "mexc_api.txt", "api_key.txt", "keys.txt"]
-    
+
+    possible_files = ["MEXC API ADRESLERİ.txt", "mexc_api.txt", "api_key.txt", "keys.txt"]
+
     for fname in possible_files:
         fpath = os.path.join(project_dir, fname)
         if os.path.exists(fpath):
@@ -110,26 +108,48 @@ def load_env_credentials() -> dict:
                             k_upper = k.strip().upper().replace(" ", "_")
                             val = v.strip().strip("'").strip('"')
                             if val:
-                                if k_upper in ["MEXC_API_KEY", "API_KEY", "ACCESS_KEY"]:
+                                if k_upper in ["MEXC_API_KEY", "MEXC_ACCESS_KEY", "API_KEY", "ACCESS_KEY"]:
                                     if not api_key: api_key = val
                                 elif k_upper in ["MEXC_SECRET_KEY", "SECRET_KEY"]:
                                     if not secret_key: secret_key = val
-            except: pass
+            except Exception:
+                pass
     if api_key: os.environ["MEXC_API_KEY"] = api_key
     if secret_key: os.environ["MEXC_SECRET_KEY"] = secret_key
     return {"api_key": api_key, "secret_key": secret_key}
 
 load_env_credentials()
 
+@st.cache_resource(ttl=1800, show_spinner=False)
+def get_public_mexc_client():
+    """Herhangi bir API anahtari gerektirmeyen (genel/public) veri cekimleri icin TEK, paylasilan
+    ve piyasa listesi onceden yuklenmis MEXC istemcisi.
+
+    ONEMLI PERFORMANS NOTU: ccxt her create_order/fetch_ohlcv/fetch_ticker/... cagrisinda,
+    eger o istemcinin market listesi (self.markets) yuklu degilse otomatik olarak load_markets()
+    calistirir; bu tek seferde ~3000 spot+vadeli sozlesmeyi indirip parse eder. Eskiden neredeyse
+    her fonksiyon kendi taze ccxt.mexc() nesnesini olusturuyordu; bu da 3-5 saniyede bir calisan
+    canli terminalde HER YENILEMEDE birden fazla kez bu agir load_markets() indirmesinin tekrar
+    tekrar yapilmasina (ve panelin cok yavas/gec yuklenmesine) sebep oluyordu. Artik tum genel
+    fonksiyonlar bu tek, onbelleklenmis istemciyi paylasiyor.
+    """
+    ex = ccxt.mexc({'enableRateLimit': True, 'options': {'defaultType': 'swap'}})
+    ex.load_markets()
+    return ex
+
+
+@st.cache_resource(ttl=1800, show_spinner=False)
 def get_mexc_ccxt_client(api_key="", secret_key=""):
     key = api_key or os.getenv("MEXC_API_KEY", "")
     sec = secret_key or os.getenv("MEXC_SECRET_KEY", "")
-    return ccxt.mexc({
+    ex = ccxt.mexc({
         'apiKey': key,
         'secret': sec,
         'enableRateLimit': True,
         'options': {'defaultType': 'swap'}
     })
+    ex.load_markets()
+    return ex
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_binance_account_balance(api_key: str = "", secret_key: str = "") -> dict:
@@ -144,116 +164,18 @@ def fetch_binance_account_balance(api_key: str = "", secret_key: str = "") -> di
     except Exception as e:
         return {"status": "ERROR", "msg": str(e)}
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def get_binance_symbol_precision(symbol: str) -> tuple:
-    try:
-        ex = ccxt.mexc({'options': {'defaultType': 'swap'}})
-        ex.load_markets()
-        market = ex.market(symbol)
-        return market['precision']['price'], market['precision']['amount']
-    except:
-        return 4, 0
-
-def set_binance_leverage(symbol: str, leverage: int, api_key: str = "", secret_key: str = "") -> dict:
-    try:
-        ex = get_mexc_ccxt_client(api_key, secret_key)
-        res = ex.set_leverage(leverage, symbol)
-        return res
-    except Exception as e:
-        return {"error": str(e)}
-
-def set_binance_margin_type(symbol: str, margin_type: str = "ISOLATED", api_key: str = "", secret_key: str = "") -> dict:
-    try:
-        ex = get_mexc_ccxt_client(api_key, secret_key)
-        res = ex.set_margin_mode(margin_type.lower(), symbol)
-        return res
-    except Exception as e:
-        return {"error": str(e)}
-
-def execute_binance_futures_order(symbol: str, side: str, position_usd: float, current_price: float, tp_price: float = None, sl_price: float = None, api_key: str = "", secret_key: str = "") -> dict:
-    try:
-        ex = get_mexc_ccxt_client(api_key, secret_key)
-        raw_qty = position_usd / current_price
-        
-        order = ex.create_order(symbol, 'market', side.lower(), raw_qty)
-        
-        tp_sl_status = []
-        opposite = "sell" if side.lower() == "buy" else "buy"
-        
-        if tp_price:
-            try:
-                ex.create_order(symbol, 'market', opposite, raw_qty, params={'takeProfitPrice': tp_price, 'reduceOnly': True})
-                tp_sl_status.append(f" TP ({tp_price:.4f})")
-            except Exception as e:
-                tp_sl_status.append(f" TP Hatası")
-                
-        if sl_price:
-            try:
-                ex.create_order(symbol, 'market', opposite, raw_qty, params={'stopLossPrice': sl_price, 'reduceOnly': True})
-                tp_sl_status.append(f" SL ({sl_price:.4f})")
-            except Exception as e:
-                tp_sl_status.append(f" SL Hatası")
-                
-        return {"success": True, "orderId": order['id'], "symbol": symbol, "side": side, "quantity": raw_qty, "tp_sl_info": ", ".join(tp_sl_status)}
-    except Exception as e:
-        return {"error": str(e)}
-
-def fetch_binance_open_positions(api_key: str = "", secret_key: str = "") -> list:
-    try:
-        ex = get_mexc_ccxt_client(api_key, secret_key)
-        positions = ex.fetch_positions()
-        active = []
-        for p in positions:
-            if float(p.get('contracts', 0)) > 0:
-                active.append({
-                    "symbol": p['symbol'],
-                    "amt": float(p.get('contracts', 0)) * (-1 if p['side'] == 'short' else 1),
-                    "side": p['side'].upper(),
-                    "entryPrice": float(p.get('entryPrice', 0)),
-                    "markPrice": float(p.get('markPrice', 0)),
-                    "unRealizedProfit": float(p.get('unrealizedPnl', 0)),
-                    "leverage": int(p.get('leverage', 1)),
-                    "liquidationPrice": float(p.get('liquidationPrice', 0)),
-                    "marginType": p.get('marginMode', 'isolated')
-                })
-        return active
-    except:
-        return []
-
-def close_binance_position(symbol: str, api_key: str = "", secret_key: str = "") -> dict:
-    try:
-        ex = get_mexc_ccxt_client(api_key, secret_key)
-        ex.cancel_all_orders(symbol)
-        
-        positions = fetch_binance_open_positions(api_key, secret_key)
-        pos = next((p for p in positions if p['symbol'] == symbol), None)
-        if not pos: return {"error": f"{symbol} için açık pozisyon bulunamadı!"}
-        
-        side = "sell" if pos['side'] == "LONG" else "buy"
-        amt = abs(pos['amt'])
-        ex.create_order(symbol, 'market', side, amt, params={'reduceOnly': True})
-        return {"success": True, "message": f"{symbol} kapatıldı!"}
-    except Exception as e:
-        return {"error": str(e)}
-
-def dca_binance_position(symbol: str, side: str, dca_usd: float, current_price: float, api_key: str = "", secret_key: str = "") -> dict:
-    try:
-        ex = get_mexc_ccxt_client(api_key, secret_key)
-        raw_qty = dca_usd / current_price
-        ex.create_order(symbol, 'market', side.lower(), raw_qty)
-        return {"success": True, "message": f"DCA Başarılı!"}
-    except Exception as e:
-        return {"error": str(e)}
-
 @st.cache_data(ttl=1800, show_spinner=False)
 def get_all_binance_futures_symbols() -> tuple:
     try:
-        ex = ccxt.mexc({'options': {'defaultType': 'swap'}})
-        markets = ex.load_markets()
+        ex = get_public_mexc_client()
+        markets = ex.markets
         symbols = []
         symbol_map = {}
         for sym, m in markets.items():
-            if m['active'] and m['quote'] == 'USDT':
+            # ONEMLI: ccxt-mexc load_markets() spot VE swap piyasalarini birlikte dondurur.
+            # 'swap' filtresi olmadan spot semboller (orn. BTC/USDT) de listeye karisir ve
+            # secildiginde bot MEXC Vadeli fiyati yerine yanlislikla Spot fiyatini gosterir/kullanir.
+            if m.get('swap') and m['active'] and m['quote'] == 'USDT':
                 symbols.append(sym)
                 base = m['base']
                 symbol_map[base] = sym
@@ -261,12 +183,26 @@ def get_all_binance_futures_symbols() -> tuple:
                     symbol_map[base[4:]] = sym
         symbols.sort()
         return symbols, symbol_map
-    except:
+    except Exception:
         return ["BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT", "XRP/USDT:USDT"], {}
 
 def normalize_futures_symbol(user_input: str) -> tuple:
     all_symbols, symbol_map = get_all_binance_futures_symbols()
     text = user_input.strip().upper().replace(" ", "").replace("_", "").replace("-", "")
+
+    if text in all_symbols:
+        return text, ""
+
+    # "BTC/USDT" gibi spot gorunumlu (":USDT" vadeli sonekini icermeyen) girisleri
+    # yanlislikla Spot fiyatini kullanmamak icin MEXC Vadeli karsiligina cevir.
+    if "/" in text and ":" not in text:
+        base = text.split("/")[0]
+        if base in symbol_map:
+            return symbol_map[base], f" MEXC Vadeli Eşleşti: {symbol_map[base]}"
+        sym = f"{base}/USDT:USDT"
+        if sym in all_symbols:
+            return sym, f" MEXC Vadeli Eşleşti: {sym}"
+
     if "/" not in text and ":" not in text:
         clean = text.replace("USDT", "")
         if clean in symbol_map:
@@ -276,14 +212,15 @@ def normalize_futures_symbol(user_input: str) -> tuple:
         import difflib
         matches = difflib.get_close_matches(sym, all_symbols, n=1, cutoff=0.5)
         if matches: return matches[0], f"💡 Yakın Eşleşme: {matches[0]}"
+
     return user_input, ""
 
 INTERVAL_MAP = {"Min1": "1m", "Min5": "5m", "Min15": "15m", "Min60": "1h", "Min240": "4h"}
 
-@st.cache_data(ttl=1, show_spinner=False)
+@st.cache_data(ttl=3, show_spinner=False)
 def fetch_binance_kline_data(symbol: str, interval: str = "Min1", limit: int = 500) -> pd.DataFrame:
     try:
-        ex = ccxt.mexc({'options': {'defaultType': 'swap'}})
+        ex = get_public_mexc_client()
         api_interval = INTERVAL_MAP.get(interval, "1m")
         ohlcv = ex.fetch_ohlcv(symbol, api_interval, limit=limit)
         
@@ -292,7 +229,7 @@ def fetch_binance_kline_data(symbol: str, interval: str = "Min1", limit: int = 5
             df_fund = pd.DataFrame(funding)
             df_fund['time'] = pd.to_datetime(df_fund['timestamp'], unit='ms')
             df_fund.set_index('time', inplace=True)
-        except: df_fund = pd.DataFrame()
+        except Exception: df_fund = pd.DataFrame()
         
         if ohlcv:
             df = pd.DataFrame(ohlcv, columns=["time", "open", "high", "low", "close", "vol"])
@@ -304,13 +241,14 @@ def fetch_binance_kline_data(symbol: str, interval: str = "Min1", limit: int = 5
             else:
                 df['funding_rate'] = 0.0
             return df.reset_index()
-    except: pass
+    except Exception:
+        pass
     return pd.DataFrame()
 
-@st.cache_data(ttl=1, show_spinner=False)
+@st.cache_data(ttl=3, show_spinner=False)
 def fetch_binance_ticker_details(symbol: str) -> dict:
     try:
-        ex = ccxt.mexc({'options': {'defaultType': 'swap'}})
+        ex = get_public_mexc_client()
         ticker = ex.fetch_ticker(symbol)
         funding = ex.fetch_funding_rate(symbol) if ex.has['fetchFundingRate'] else {}
         return {
@@ -322,12 +260,13 @@ def fetch_binance_ticker_details(symbol: str) -> dict:
             "fundingRate": funding.get('fundingRate', 0) * 100 if funding else 0.0,
             "markPrice": ticker.get('info', {}).get('markPrice', ticker.get('last', 0))
         }
-    except: return {}
+    except Exception:
+        return {}
 
-@st.cache_data(ttl=1, show_spinner=False)
+@st.cache_data(ttl=3, show_spinner=False)
 def fetch_binance_depth_imbalance(symbol: str) -> dict:
     try:
-        ex = ccxt.mexc({'options': {'defaultType': 'swap'}})
+        ex = get_public_mexc_client()
         ob = ex.fetch_order_book(symbol, limit=20)
         bid_vol = sum([b[1] for b in ob['bids']])
         ask_vol = sum([a[1] for a in ob['asks']])
@@ -339,12 +278,13 @@ def fetch_binance_depth_imbalance(symbol: str) -> dict:
             "imbalance": bid_ratio - ask_ratio,
             "bias": "ALICI AĞIRLIKLI" if bid_ratio > 53 else ("SATICI AĞIRLIKLI" if ask_ratio > 53 else "DENGELİ")
         }
-    except: return {"bid_ratio": 50.0, "ask_ratio": 50.0, "imbalance": 0.0, "bias": "DENGELİ"}
+    except Exception:
+        return {"bid_ratio": 50.0, "ask_ratio": 50.0, "imbalance": 0.0, "bias": "DENGELİ"}
 
 @st.cache_data(ttl=5, show_spinner=False)
 def fetch_institutional_order_flow(symbol: str, timeframe: str = "5m", limit: int = 150) -> pd.DataFrame:
     try:
-        ex = ccxt.mexc({'options': {'defaultType': 'swap'}})
+        ex = get_public_mexc_client()
         api_interval = INTERVAL_MAP.get(timeframe, "5m")
         ohlcv = ex.fetch_ohlcv(symbol, api_interval, limit=limit)
         if not ohlcv: return pd.DataFrame()
@@ -356,10 +296,17 @@ def fetch_institutional_order_flow(symbol: str, timeframe: str = "5m", limit: in
         df['taker_delta_trend'] = np.where(df['close'] > df['open'], df['vol'] * 0.6, -df['vol'] * 0.6)
         
         return df[['time', 'oi_change_pct', 'taker_delta_trend']]
-    except: return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
 
+@st.cache_data(ttl=5, show_spinner=False)
 def fetch_usdt_dominance_matrix() -> dict:
-    """TradingView'in resmi canlı sunucusundan (CRYPTOCAP:USDT.D) Dolar Dominansı ve BTC.D verilerini 0 gecikmeyle çeker."""
+    """TradingView'in resmi canlı sunucusundan (CRYPTOCAP:USDT.D) Dolar Dominansı ve BTC.D verilerini 0 gecikmeyle çeker.
+
+    ONEMLI: Bu fonksiyonun onbellegi yoktu; ana terminal her yenilendiginde (varsayilan 3 saniyede
+    bir) TradingView'e, o basarisiz olursa CoinGecko'ya kadar 2 ayri dis HTTP istegi (her biri 2.5s
+    timeout ile) atiliyordu. Bu, panelin agir/yavas yuklenmesinin en buyuk sebeplerinden biriydi.
+    """
     # 1. Öncelik: TradingView Resmi Canlı Uç Noktası (CRYPTOCAP:USDT.D & BTC.D)
     try:
         url_tv = "https://scanner.tradingview.com/global/scan"
@@ -411,7 +358,7 @@ def fetch_usdt_dominance_matrix() -> dict:
     # 2. İkinci Yedek: CoinGecko Global API
     try:
         url_cg = "https://api.coingecko.com/api/v3/global"
-        r_cg = requests.get(url_cg, headers={"User-Agent": "Mozilla/5.0"}, verify=False, timeout=2.5)
+        r_cg = requests.get(url_cg, headers={"User-Agent": "Mozilla/5.0"}, timeout=2.5)
         if r_cg.status_code == 200:
             d_cg = r_cg.json().get("data", {})
             mcap = d_cg.get("market_cap_percentage", {})
@@ -434,13 +381,13 @@ def fetch_usdt_dominance_matrix() -> dict:
         pass
         
     return {
-        "usdt_d": 7.03,
-        "usdt_d_change": -0.66,
-        "btc_d": 59.6,
-        "eth_d": 11.3,
-        "trend": "DÜŞÜŞTE (Kripto Boğa / LONG)",
-        "bias": "BULLISH_CRYPTO",
-        "source": "DEFAULT"
+        "usdt_d": 0.0,
+        "usdt_d_change": 0.0,
+        "btc_d": 0.0,
+        "eth_d": 0.0,
+        "trend": "VERİ ÇEKİLEMEDİ",
+        "bias": "NEUTRAL",
+        "source": "UNAVAILABLE"
     }
 
 
@@ -510,16 +457,17 @@ def compute_macro_support_resistance_levels(df: pd.DataFrame, symbol: str = "BTC
     
     # 1D Makro veriyi çek (Son 180 Günlük Hacim Profili için)
     try:
-        url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval=1d&limit=180"
-        import requests
-        res = requests.get(url, timeout=3.5)
-        data = res.json()
-        df_1d = pd.DataFrame(data, columns=['ts', 'open', 'high', 'low', 'close', 'vol', 'close_ts', 'qav', 'num_trades', 'taker_base', 'taker_quote', 'ignore'])
-        df_1d['close'] = df_1d['close'].astype(float)
-        df_1d['high'] = df_1d['high'].astype(float)
-        df_1d['low'] = df_1d['low'].astype(float)
-        df_1d['vol'] = df_1d['vol'].astype(float)
-    except:
+        _ex = get_public_mexc_client()
+        ohlcv_1d = _ex.fetch_ohlcv(symbol, '1d', limit=180)
+        if ohlcv_1d:
+            df_1d = pd.DataFrame(ohlcv_1d, columns=['ts', 'open', 'high', 'low', 'close', 'vol'])
+            df_1d['close'] = df_1d['close'].astype(float)
+            df_1d['high'] = df_1d['high'].astype(float)
+            df_1d['low'] = df_1d['low'].astype(float)
+            df_1d['vol'] = df_1d['vol'].astype(float)
+        else:
+            df_1d = df.copy()
+    except Exception:
         df_1d = df.copy() # Fallback
 
     # 1. Hacim Profili (Volume Profile - VRVP) Düğümleri
@@ -609,12 +557,10 @@ def compute_macro_support_resistance_levels(df: pd.DataFrame, symbol: str = "BTC
 def compute_macro_timeframe_trend(symbol: str = "BTCUSDT") -> dict:
     """4 Saatlik (4h) ve Günlük (1d) zaman dilimlerindeki makro trend yönünü hesaplar."""
     try:
-        url_4h = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval=4h&limit=100"
-        r_4h = requests.get(url_4h, verify=False, timeout=3.5)
-        
-        if r_4h.status_code == 200:
-            d4 = r_4h.json()
-            c4 = pd.Series([float(row[4]) for row in d4])
+        _ex = get_public_mexc_client()
+        ohlcv_4h = _ex.fetch_ohlcv(symbol, '4h', limit=100)
+        if ohlcv_4h:
+            c4 = pd.Series([float(row[4]) for row in ohlcv_4h])
             ema50_4h = c4.ewm(span=50, adjust=False).mean().iloc[-1]
             ema200_4h = c4.ewm(span=200, adjust=False).mean().iloc[-1]
             last4 = c4.iloc[-1]
@@ -642,11 +588,11 @@ def compute_macro_timeframe_trend(symbol: str = "BTCUSDT") -> dict:
         pass
         
     return {
-        "trend_4h": "BULLISH",
+        "trend_4h": "UNAVAILABLE",
         "ema50_4h": 0.0,
         "ema200_4h": 0.0,
-        "macro_badge": "🟢 4H/1D MAKRO BOĞA TRENDİ",
-        "macro_bias": "LONG_STRONG"
+        "macro_badge": "⚠️ 4H/1D MAKRO VERİ ÇEKİLEMEDİ",
+        "macro_bias": "NEUTRAL"
     }
 
 
@@ -692,11 +638,11 @@ def compute_4h_scalp_prediction(symbol: str = "BTCUSDT") -> dict:
         pass
         
     return {
-        "direction": "LONG",
-        "confidence": 65.0,
-        "pred_title": "🟢 4H YÜKSELİŞ TAHMİNİ (BOĞA)",
-        "pred_badge": "BULLISH_4H",
-        "color": "#10b981",
+        "direction": "NEUTRAL",
+        "confidence": 0.0,
+        "pred_title": "⚠️ 4H VERİ ÇEKİLEMEDİ (Tahmin Yapılamıyor)",
+        "pred_badge": "UNAVAILABLE",
+        "color": "#f59e0b",
         "ema50": 0.0,
         "ema200": 0.0
     }
@@ -706,26 +652,6 @@ def compute_4h_scalp_prediction(symbol: str = "BTCUSDT") -> dict:
 def compute_quantum_features(df_raw: pd.DataFrame, symbol: str = "BTCUSDT", interval: str = "5m") -> pd.DataFrame:
     """Gerçek mum verileri üzerinden kurumsal teknik indikatörler ve yapay zeka özniteliklerini üretir."""
     df = df_raw.copy()
-    
-    # --- MACRO DATA MERGE ---
-    fg_df, dxy_df, spy_df = fetch_macro_data()
-    df['date_str'] = pd.to_datetime(df.index if df.index.name else df['time']).dt.strftime('%Y-%m-%d')
-    if not fg_df.empty and 'date_str' in fg_df.columns:
-        fg_map = fg_df.drop_duplicates('date_str').set_index('date_str')['fear_greed']
-        df['fear_greed'] = df['date_str'].map(fg_map)
-    else:
-        df['fear_greed'] = np.nan
-        
-    if not dxy_df.empty and 'date_str' in dxy_df.columns:
-        dxy_map = dxy_df.drop_duplicates('date_str').set_index('date_str')['dxy']
-        df['dxy'] = df['date_str'].map(dxy_map)
-    else:
-        df['dxy'] = np.nan
-        
-    df['fear_greed'] = df['fear_greed'].ffill().fillna(50.0)
-    df['dxy'] = df['dxy'].ffill().fillna(100.0)
-    df.drop(columns=['date_str'], inplace=True, errors='ignore')
-
     
     # --- MACRO DATA MERGE ---
     fg_df, dxy_df, spy_df = fetch_macro_data()
@@ -838,13 +764,17 @@ def compute_quantum_features(df_raw: pd.DataFrame, symbol: str = "BTCUSDT", inte
 # --- 4. YAPAY ZEKA TOPLULUK MODELİ (ENSEMBLE MACHINE LEARNING & KALİBRASYON) ---
 from sklearn.feature_selection import SelectKBest, f_classif
 
-import streamlit as st
-import pandas as pd
-import numpy as np
-from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier, VotingClassifier
-
 @st.cache_resource(ttl=300, show_spinner=False)
-def _cached_train_quantum_ai(symbol_tf: str, train_df: pd.DataFrame, feature_cols: list):
+def _cached_train_quantum_ai(symbol_tf: str, _train_df: pd.DataFrame, _feature_cols: list):
+    # ONEMLI: Parametre adlari basinda "_" olmasi BILINCLI: Streamlit cache_resource, alt cizgiyle
+    # baslayan parametreleri hash'lemeden atlar. Aksi halde her cagrida (birkac saniyede bir) koca
+    # DataFrame'in tamami hashlenir; bu da altta zaten var olan ucuz "symbol_tf" string anahtarini
+    # (yorum: "HIZLANDIRICI MANTIK") anlamsizlastirip gereksiz yavaslamaya sebep olurdu.
+    train_df, feature_cols = _train_df, _feature_cols
+    # Guvenlik agi: herhangi bir feature'da olusabilecek sonsuz (inf) deger sklearn'i cokertir.
+    train_df = train_df.copy()
+    train_df[feature_cols] = train_df[feature_cols].replace([np.inf, -np.inf], 0.0)
+
     selector = SelectKBest(score_func=f_classif, k=min(12, len(feature_cols)))
     selector.fit(train_df[feature_cols], train_df['target'])
     final_features = [f for f, selected in zip(feature_cols, selector.get_support()) if selected]
@@ -1109,6 +1039,16 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         badge_class = "signal-badge-neutral"
         trade_allowed = False
         action_note = "Piyasada yön belirginleşene kadar nakitte beklenmeli."
+    elif raw_dir == "NEUTRAL":
+        # ONEMLI: raw_dir buraya ya modelin kendisi LONG/SHORT arasinda net ayrisamadigi icin
+        # ya da yukaridaki Dolar Dominansi filtresi orijinal yonu iptal ettigi icin (LONG/SHORT Iptal!)
+        # gelir. Bu dal olmadan kod asagidaki 'else' (SHORT) dalina dusup iptal edilen bir LONG
+        # sinyalini yanlislikla "GÜÇLÜ SHORT" olarak gosteriyordu.
+        final_signal = "NEUTRAL"
+        signal_title = "🛑 NÖTR / BEKLE (SİNYAL İPTAL EDİLDİ)"
+        badge_class = "signal-badge-neutral"
+        trade_allowed = False
+        action_note = "Çapraz doğrulama filtrelerinden biri (ör. Dolar Dominansı) orijinal AI yönünü iptal etti; net bir yön oluşmadı."
     elif raw_dir == "LONG":
         if confluence_score >= 60 and confidence >= 58.0:
             final_signal = "STRONG_LONG"
@@ -1262,16 +1202,9 @@ def compute_institutional_risk_levels(
     }
 
 
-# --- 6.5. SIDEBAR API ANAHTARLARI VE OTOMATİK İŞLEM KONTROLLERİ ---
+# --- 6.5. SIDEBAR API ANAHTARLARI VE İŞLEM KONTROLLERİ ---
 with st.sidebar:
-    st.markdown("### ⚡ Bot Motoru & Master Şalter")
-    motor_active = st.toggle("🟢 BOT MOTORU AKTİF (Sinyal & İşlem)", value=True, help="Botun sinyal üretme ve işlem yapma döngüsünü tamamen açıp kapatır.")
-    
-    if not motor_active:
-        st.error("🔴 BOT MOTORU DURDURULDU (PASİF)")
-        
-    st.markdown("---")
-    st.markdown("### 🔐 Binance API & Otomasyon")
+    st.markdown("### 🔐 MEXC API & Otomasyon")
     
     env_creds = load_env_credentials()
 
@@ -1279,16 +1212,16 @@ with st.sidebar:
     
     with st.expander("🔑 API Key ve Secret Tanımla", expanded=not (env_creds["api_key"] and env_creds["secret_key"])):
         st.info("💡 API anahtarlarınızı ister aşağıdaki kutucuklara yapıştırabilir, isterseniz de `.env` dosyasına kaydedebilirsiniz.")
-        user_api_key = st.text_input("Binance API Key:", value=env_creds["api_key"], type="password", help="Binance hesabınızdan ürettiğiniz Futures API Key")
-        user_secret_key = st.text_input("Binance Secret Key:", value=env_creds["secret_key"], type="password", help="Binance Secret Key")
+        user_api_key = st.text_input("MEXC API Key:", value=env_creds["api_key"], type="password", help="MEXC hesabınızdan ürettiğiniz Futures API Key")
+        user_secret_key = st.text_input("MEXC Secret Key:", value=env_creds["secret_key"], type="password", help="MEXC Secret Key")
         
         if user_api_key:
-            os.environ["BINANCE_API_KEY"] = user_api_key
+            os.environ["MEXC_API_KEY"] = user_api_key
         if user_secret_key:
-            os.environ["BINANCE_SECRET_KEY"] = user_secret_key
+            os.environ["MEXC_SECRET_KEY"] = user_secret_key
             
-    active_api_key = os.getenv("BINANCE_API_KEY", "").strip()
-    active_secret_key = os.getenv("BINANCE_SECRET_KEY", "").strip()
+    active_api_key = os.getenv("MEXC_API_KEY", "").strip()
+    active_secret_key = os.getenv("MEXC_SECRET_KEY", "").strip()
     
     wallet_balance_val = 0.0
     if active_api_key and active_secret_key:
@@ -1296,15 +1229,11 @@ with st.sidebar:
         if bal["status"] == "FUTURES_OK":
             wallet_balance_val = bal['wallet_balance']
             st.success(f"🟢 Private API: VADELİ BAĞLI & HAZIR\n\n💰 Vadeli Cüzdan: ${wallet_balance_val:,.2f} USDT")
-        elif bal["status"] == "SPOT_OK":
-            wallet_balance_val = bal['wallet_balance']
-            st.success(f"🟢 Private API: BAĞLI & HAZIR (Spot Bakiye: ${wallet_balance_val:,.2f} USDT)")
-            st.info("💡 **Vadeli İşlem Yapabilmek İçin:** Binance -> API Yönetimi sayfasından bu API Key için **'Enable Futures' (Vadeli İşlemleri Etkinleştir)** iznini işaretleyip kaydedin.")
         else:
             st.warning(" API Anahtarı Algılandı Fakat Yetki Reddedildi (IP kısıtlaması veya geçersiz anahtar)")
     else:
         st.warning(" Private API: BAĞLI DEĞİL (Yalnızca Sinyal Modu)")
-        st.caption("📌 `c:\\Users\\ACER\\OneDrive\\Masaüstü\\kripto\\.env` dosyasına API anahtarınızı girip kaydedin VEYA yukarıdaki menüye yapıştırın.")
+        st.caption("📌 Proje klasörünüzdeki `.env` dosyasına API anahtarınızı girip kaydedin VEYA yukarıdaki menüye yapıştırın.")
         
     st.markdown("---")
     st.markdown("### 💵 Sermaye & Kasa Takip Paneli")
@@ -1328,57 +1257,9 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown("---")
-    st.markdown("### 🎯 3 Farklı Risk / Strateji Modu (Oto-Mod)")
-    risk_strategy_mode = st.radio(
-        "Strateji Modu Seçimi:",
-        [
-            "🛡️ Korumalı Mod (Güvenli - Max 25 Slot)",
-            "⚖️ Normal Mod (Dengeli - Max 15 Slot)",
-            "🚀 Agresif Mod (Yüksek Risk - Max 10 Slot)"
-        ],
-        index=1,
-        help="Aynı anda birden fazla modun marjini tüketmemesi için çakışma korumalı tekil seçim."
-    )
-    
-    if "Agresif Mod" in risk_strategy_mode:
-        st.warning(" UYARI: Agresif Mod yüksek kaldıraç ve hızlı işlem döngüsü içerir. Kazanma potansiyeli yüksek olduğu gibi zarar riski de yüksektir!")
-    elif "Korumalı Mod" in risk_strategy_mode:
-        st.info("🛡️ Korumalı Mod: Düşük kaldıraç ve yüksek güven seviyeli işlemler açar. Ekran başında durma ihtiyacını minimuma indirir.")
-    else:
-        st.success("⚖️ Normal Mod: Performans analizlerine göre en dengeli risk/ödül oranını hedefler.")
-        
-    st.markdown("---")
-    st.markdown("### ⚙️ Pro-Mod (Profesyonel Özelleştirme)")
-    pro_mode_active = st.checkbox("Pro-Modu Aktif Et", value=False)
-    
-    custom_pro_leverage = 10
-    custom_pro_margin = 100.0
-    custom_strategy_type = " DAILY (15m)"
-    
-    if pro_mode_active:
-        st.warning(" PRO-MOD UYARISI: Bu modda yapılan değişiklikler Yapay Zekâ stratejisinin orijinal performansını değiştirebilir. Onaylıyor musunuz?")
-        
-        custom_pro_leverage = st.slider("Pro Kaldıraç Oranı:", min_value=1, max_value=100, value=20, format="%dx")
-        custom_pro_margin = st.number_input("Pro Marjin / Bütçe ($):", min_value=10.0, max_value=50000.0, value=100.0, step=25.0)
-        custom_strategy_type = st.selectbox("Pro Strateji Tipi:", ["⚡ SCALP (1m/5m Hızlı)", " DAILY (15m Dengeli)", "🌊 SWING (1h/4h Trend)"])
-        
-    st.markdown("---")
-    st.markdown("### 🛡️ İşlem Onay Tipi")
-    trading_mode = st.radio(
-        "İşlem Onayı:",
-        [" Yalnızca Analiz & Manuel Onaylı İşlem", "⚡ Otomatik İşlem Modu (Gelişmiş)"],
-        index=0
-    )
-    
-    auto_trade_enabled = False
-    if trading_mode == "⚡ Otomatik İşlem Modu (Gelişmiş)":
-        auto_trade_enabled = st.checkbox("🤖 Yüksek Güvenli Sinyallerde Otomatik Pozisyon Aç", value=False)
-        st.caption("Filtre: AI Güven >= %62 ve Confluence >= 60 olduğunda otomatik TP1/TP2 & SL emirleriyle piyasa fiyatından girer.")
-
 
 # --- 7. BAŞLIK VE KONTROL PANELİ ---
-st.title("⚡ Pro-Quantum Trading Terminal (Binance AI Quant Engine)")
+st.title("⚡ Pro-Quantum Trading Terminal (MEXC AI Quant Engine)")
 
 # Favori coin butonları için session state başlat
 if "active_symbol_query" not in st.session_state:
@@ -1428,7 +1309,7 @@ symbol_str, match_info = normalize_futures_symbol(user_query)
 with col_dropdown:
     default_idx = all_futures_list.index(symbol_str) if symbol_str in all_futures_list else 0
     selected_from_dropdown = st.selectbox(
-        f"📋 Tüm Binance Çiftleri ({total_coin_count} Coin):",
+        f"📋 Tüm MEXC Çiftleri ({total_coin_count} Coin):",
         all_futures_list,
         index=default_idx
     )
@@ -1439,7 +1320,7 @@ with col_dropdown:
 st.markdown(f"""
 <div style="background:#0b1120; border:1px solid #1e293b; padding:10px 16px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
     <div>
-        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🌐 Binance Entegreli Toplam İşlem Çifti Sayısı:</span>
+        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🌐 MEXC Entegreli Toplam İşlem Çifti Sayısı:</span>
         <div style="font-size:18px; font-weight:900; color:#38bdf8;">{total_coin_count} / {total_coin_count} İşlem Çifti <span style="font-size:12px; color:#10b981; font-weight:bold;">(%100 Tam Borsa Entegre)</span></div>
     </div>
     <div style="text-align:right;">
@@ -1468,10 +1349,9 @@ with col_budget:
     margin_budget = st.number_input("💰 Bütçe / Marjin ($):", min_value=10.0, max_value=100000.0, value=100.0, step=50.0, format="%.0f")
 
 with col_speed:
-    refresh_rate = st.selectbox("🔄 Akış Hızı:", [1, 2, 3, 5], index=0, format_func=lambda x: f"{x} Saniyede Bir")
+    refresh_rate = st.selectbox("🔄 Akış Hızı:", [3, 5, 10, 15], index=0, format_func=lambda x: f"{x} Saniyede Bir")
 
 if match_info and "💡" in match_info:
-    st.info(match_info)
     st.info(match_info)
 
 
@@ -1549,89 +1429,18 @@ def render_quantum_terminal():
     def fmt(p):
         return f"${p:,.6f}" if p < 1 else f"${p:,.4f}" if p < 100 else f"${p:,.2f}"
         
-    # --- 8.1. STRATEJİ MODU YAPILANDIRMA MOTORU ---
-    if pro_mode_active:
-        mode_title = f"⚙️ PRO-MOD (ÖZEL) ({custom_strategy_type})"
-        mode_confidence_thresh = 60.0
-        mode_confluence_thresh = 55
-        mode_max_lev = custom_pro_leverage
-        mode_max_slots = 10
-        mode_color = "#38bdf8"
-    elif "Korumalı Mod" in risk_strategy_mode:
-        mode_title = "🛡️ KORUMALI MOD (GÜVENLİ & İSTİKRARLI BÜYÜME)"
-        mode_confidence_thresh = 70.0
-        mode_confluence_thresh = 75
-        mode_max_lev = 5
-        mode_max_slots = 25
-        mode_color = "#10b981"
-    elif "Agresif Mod" in risk_strategy_mode:
-        mode_title = "🚀 AGRESİF MOD (YÜKSEK RİSK & HIZLI GETİRİ)"
-        mode_confidence_thresh = 55.0
-        mode_confluence_thresh = 50
-        mode_max_lev = 50
-        mode_max_slots = 10
-        mode_color = "#ef4444"
-    else:
-        mode_title = "⚖️ NORMAL MOD (DENGELİ RİSK / ÖDÜL)"
-        mode_confidence_thresh = 62.0
-        mode_confluence_thresh = 60
-        mode_max_lev = 15
-        mode_max_slots = 15
-        mode_color = "#f59e0b"
-        
-    # OTOMATİK İŞLEM TETİKLEYİCİ (Bot Motoru Aktifse ve Seçili Strateji Modunun Eşiklerini Sağlıyorsa)
-    if motor_active and auto_trade_enabled and active_api_key and active_secret_key:
-        if confluence["confidence"] >= mode_confidence_thresh and confluence["confluence_score"] >= mode_confluence_thresh:
-            trade_key = f"last_auto_trade_{symbol_str}"
-            last_trade_time = st.session_state.get(trade_key, 0)
-            if time.time() - last_trade_time > 120:  # 2 Dakika Cooldown
-                side = "BUY" if "LONG" in confluence["final_signal"] else ("SELL" if "SHORT" in confluence["final_signal"] else None)
-                if side:
-                    pos_total_usd = margin_budget * selected_leverage
-                    set_binance_leverage(symbol_str, min(selected_leverage, mode_max_lev), active_api_key, active_secret_key)
-                    set_binance_margin_type(symbol_str, "ISOLATED", active_api_key, active_secret_key)
-                    res = execute_binance_futures_order(
-                        symbol=symbol_str,
-                        side=side,
-                        position_usd=pos_total_usd,
-                        current_price=current_price,
-                        tp_price=risk["min_tp_price"],
-                        sl_price=risk["sl_price"],
-                        api_key=active_api_key,
-                        secret_key=active_secret_key
-                    )
-                    if "success" in res:
-                        st.session_state[trade_key] = time.time()
-                        st.toast(f"🤖 OTOMATİK İŞLEM AÇILDI ({mode_title}): {symbol_str} {side}", icon="🚀")
-
-    if not motor_active:
-        st.error("🔴 BOT MOTORU DURDURULDU: Otomatik işlem açılışı ve API emri gönderme kilitlendi. Sistem yalnızca canlı analiz modundadır.")
-
-    # Üst Bilgi ve Aktif Strateji Modu Rozeti
-    now_str = datetime.now().strftime("%H:%M:%S")
+    # Üst Bilgi Rozeti (Seçili Coin / Zaman Dilimi / Kaldıraç / Bütçe)
     st.markdown(f"""
-    <div style="background:#0b1120; padding:10px 16px; border-radius:8px; border:1px solid {mode_color}; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
-        <div>
-            <span style="font-size: 20px; font-weight: 800; color: #38bdf8;">🟢 Binance: {symbol_str}</span>
-            <span style="color: #94a3b8; font-size: 13px; margin-left: 10px;">| {selected_tf_label} | <b style="color:#f59e0b;">{selected_leverage}x Kaldıraç</b> | <b style="color:#10b981;">Bütçe: ${margin_budget:,.0f}</b></span>
-        </div>
-        <div style="text-align:right;">
-            <div style="font-size:12px; font-weight:bold; color:{mode_color};">{mode_title}</div>
-            <div style="font-size:11px; color:#94a3b8;">Sinyal Eşiği: AI Güven >= %{mode_confidence_thresh:.0f} | Max Kaldıraç: {mode_max_lev}x | Slot: {mode_max_slots}</div>
-        </div>
+    <div style="background:#0b1120; padding:10px 16px; border-radius:8px; border:1px solid #1e293b; margin-bottom:12px;">
+        <span style="font-size: 20px; font-weight: 800; color: #38bdf8;">🟢 MEXC: {symbol_str}</span>
+        <span style="color: #94a3b8; font-size: 13px; margin-left: 10px;">| {selected_tf_label} | <b style="color:#f59e0b;">{selected_leverage}x Kaldıraç</b> | <b style="color:#10b981;">Bütçe: ${margin_budget:,.0f}</b></span>
     </div>
     """, unsafe_allow_html=True)
     
-    # === İKİ FARKLI PROFESYONEL PANEL (SEKMELİ YAPISI) ===
-    tab_analysis, tab_trading = st.tabs([
-        " 1. KANTİTATİF ANALİZ VE SİNYAL RADARI",
-        "⚡ 2. İŞLEM EXECUTION VE CANLI POZİSYON YÖNETİMİ"
-    ])
-    
     # =========================================================================
-    # SEKME 1:  KANTİTATİF ANALİZ VE İNDİKATÖR RADARI
+    # KANTİTATİF ANALİZ VE İNDİKATÖR RADARI
     # =========================================================================
-    with tab_analysis:
+    with st.container():
         # --- ÜST METRİK ŞERİDİ ---
         m1, m2, m3, m4, m5, m6 = st.columns(6)
         with m1:
@@ -1798,8 +1607,6 @@ def render_quantum_terminal():
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
-            st.info("👉 **İşlem Yapmak İçin:** Yukarıdaki '⚡ 2. İŞLEM EXECUTION VE CANLI POZİSYON YÖNETİMİ' sekmesine geçin.")
             st.markdown("</div>", unsafe_allow_html=True)
 
         # --- UZUN VADELİ MAJÖR DESTEK VE DİRENÇ YAPISAL ANALİZ KARTI ---
@@ -2062,291 +1869,6 @@ def render_quantum_terminal():
                 <div class='indicator-title'>🌐 USDT.D DOMİNANS</div>
                 <div class='indicator-value' style='color:{usdt_clr}; font-size:13px;'>%{u_d_val:.2f} {'▼' if u_chg < 0 else '▲'}</div>
                 <div class='indicator-status' style='color:{usdt_clr}; font-weight:bold;'>{usdt_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # =========================================================================
-    # SEKME 2: ⚡ PROFESYONEL İŞLEM EXECUTION VE CANLI POZİSYON PANELİ
-    # =========================================================================
-    with tab_trading:
-        st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-        
-        # 1. Seçili Coin ve Yapay Zeka Önerisi Rozeti
-        rec_color = "#10b981" if "LONG" in confluence['final_signal'] else ("#ef4444" if "SHORT" in confluence['final_signal'] else "#f59e0b")
-        st.markdown(f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; background:#0b1120; padding:12px 16px; border-radius:8px; border:1px solid #1e293b; margin-bottom:15px;">
-            <div>
-                <span style="font-size:12px; color:#94a3b8; text-transform:uppercase;">Seçili Borsa Varlığı / Coin:</span>
-                <div style="font-size:22px; font-weight:900; color:#38bdf8;">🪙 {symbol_str} <span style="font-size:14px; color:#cbd5e1; font-weight:normal;">({fmt(current_price)})</span></div>
-            </div>
-            <div style="text-align:right;">
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Yapay Zekâ Önerisi:</div>
-                <div style="font-size:16px; font-weight:bold; color:{rec_color};">{confluence['signal_title']}</div>
-                <div style="font-size:11px; color:#38bdf8;">Güven: %{confluence['confidence']:.1f} | Confluence: %{confluence['confluence_score']}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("<div class='sub-label'>🎛️ ÖZEL İŞLEM PARAMETRELERİ VE İNTERAKTİF KAZANÇ / RİSK HESAPLAYICI</div>", unsafe_allow_html=True)
-        
-        # Manuel Giriş Parametreleri: Yön, Marjin, Kaldıraç
-        p_col1, p_col2, p_col3 = st.columns([1.5, 1.5, 1.8])
-        
-        with p_col1:
-            # Varsayılan Yön Seçimi (Yapay Zekâ Önerisine Göre Ayarlanır ama Kullanıcı İsterse Değiştirebilir)
-            default_dir_idx = 0 if "LONG" in confluence['final_signal'] else 1
-            user_selected_dir = st.radio(
-                "🎯 Açılacak İşlem Yönü:",
-                ["🟢 LONG (Yükseliş / Alım)", "🔻 SHORT (Düşüş / Satım)"],
-                index=default_dir_idx,
-                key="exec_dir_radio"
-            )
-            calc_signal = "LONG" if "LONG" in user_selected_dir else "SHORT"
-            
-        with p_col2:
-            exec_budget = st.number_input("💰 İşlem Marjin Bütçesi ($):", min_value=10.0, max_value=100000.0, value=float(margin_budget), step=25.0, key="exec_budget_input")
-            
-        with p_col3:
-            exec_lev = st.select_slider("⚡ Kaldıraç Oranı:", options=[1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100], value=int(selected_leverage), key="exec_lev_input")
-            
-        exec_pos_total = exec_budget * exec_lev
-        
-        # Yön Uyarısı (Eğer kullanıcı AI önerisinin tersine yön seçtiyse bilgilendir)
-        if calc_signal not in confluence['final_signal'] and confluence['final_signal'] != "⏸️ NÖTR BEKLEMEDE":
-            st.warning(f" **Ters Yön Analizi**: Yapay Zeka modeli `{confluence['signal_title']}` önermişti, fakat siz **{calc_signal}** yönünü seçtiniz. Aşağıdaki tüm Kâr/Zarar ve Stop-Loss seviyeleri **{calc_signal}** yönü için özel hesaplanmıştır.")
-            
-        # Dinamik Hesaplanmış Risk ve TP Seviyeleri (Kullanıcının Seçtiği Yöne Göre Hesaplar)
-        exec_risk = compute_institutional_risk_levels(
-            current_price=current_price,
-            atr=latest_row["atr"],
-            signal=calc_signal,
-            leverage=exec_lev,
-            margin_budget=exec_budget,
-            confidence=confluence["confidence"],
-            confluence_score=confluence["confluence_score"]
-        )
-        
-        # Detaylı Kazan / Risk Görsel Paneli
-        c_tp1, c_tp2, c_sl = st.columns(3)
-        
-        with c_tp1:
-            st.markdown(f"""
-            <div class='profit-box-min'>
-                <div style="display:flex; justify-content:space-between;">
-                    <span style="font-size:12px; font-weight:bold; color:#10b981;">🟢 MİN KAZANÇ (Yüksek İhtimalli TP)</span>
-                    <span style="font-size:11px; color:#10b981; font-weight:bold;">R:R 1:{exec_risk['rr_min']:.2f}</span>
-                </div>
-                <div style="font-size:22px; font-weight:bold; color:#f8fafc; margin-top:4px;">{fmt(exec_risk['min_tp_price'])}</div>
-                <div style="font-size:12px; color:#94a3b8; margin-top:2px;">Mesaye: <b style="color:#10b981;">+%{exec_risk['actual_min_pct']:.2f}</b> | ROE: <b style="color:#10b981;">+%{exec_risk['actual_min_roe']:.1f}</b></div>
-                <div style="font-size:18px; font-weight:900; color:#10b981; margin-top:6px;">NET KAZANÇ: +${exec_risk['min_profit_usd']:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with c_tp2:
-            st.markdown(f"""
-            <div class='profit-box-max'>
-                <div style="display:flex; justify-content:space-between;">
-                    <span style="font-size:12px; font-weight:bold; color:#38bdf8;">🚀 MAX KAZANÇ (Zirve Potansiyel TP)</span>
-                    <span style="font-size:11px; color:#38bdf8; font-weight:bold;">R:R 1:{exec_risk['rr_max']:.2f}</span>
-                </div>
-                <div style="font-size:22px; font-weight:bold; color:#f8fafc; margin-top:4px;">{fmt(exec_risk['max_tp_price'])}</div>
-                <div style="font-size:12px; color:#94a3b8; margin-top:2px;">Mesafe: <b style="color:#38bdf8;">+%{exec_risk['actual_max_pct']:.2f}</b> | ROE: <b style="color:#38bdf8;">+%{exec_risk['actual_max_roe']:.1f}</b></div>
-                <div style="font-size:18px; font-weight:900; color:#38bdf8; margin-top:6px;">NET KAZANÇ: +${exec_risk['max_profit_usd']:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with c_sl:
-            st.markdown(f"""
-            <div class='loss-box-sl'>
-                <div style="display:flex; justify-content:space-between;">
-                    <span style="font-size:12px; font-weight:bold; color:#ef4444;">🛑 DİNAMİK STOP-LOSS (SL)</span>
-                    <span style="font-size:11px; color:#ef4444; font-weight:bold;">Risk Sınırı</span>
-                </div>
-                <div style="font-size:22px; font-weight:bold; color:#f8fafc; margin-top:4px;">{fmt(exec_risk['sl_price'])}</div>
-                <div style="font-size:12px; color:#94a3b8; margin-top:2px;">Mesafe: <b style="color:#ef4444;">-%{exec_risk['actual_sl_pct']:.2f}</b> | ROE: <b style="color:#ef4444;">-%{exec_risk['actual_sl_roe']:.1f}</b></div>
-                <div style="font-size:18px; font-weight:900; color:#ef4444; margin-top:6px;">GÖZE ALINAN RİSK: -${exec_risk['max_loss_usd']:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown(f"""
-        <div style="background:#090d16; padding:8px 12px; border-radius:6px; margin-top:10px; font-size:12px; color:#94a3b8; display:flex; justify-content:space-between;">
-            <span>📍 <b>{symbol_str} Anlık Giriş Fiyatı:</b> <b style="color:#38bdf8;">{fmt(current_price)}</b></span>
-            <span>💰 <b>Pozisyon Büyüklüğü:</b> <b style="color:#38bdf8;">${exec_pos_total:,.2f} USD</b> ({exec_lev}x)</span>
-            <span> <b>Tahmini Likidasyon Fiyatı:</b> <b style="color:#ef4444;">{fmt(exec_risk['liq_price'])}</b> (-%{exec_risk['liq_dist_pct']:.1f})</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Tek Tıkla Canlı Emir Gönderme Butonları
-        st.markdown("<div style='margin-top: 15px;'>", unsafe_allow_html=True)
-        st.markdown(f"<div class='sub-label'>⚡ {symbol_str} CANLI EMİR GÖNDERME (BINANCE FUTURES)</div>", unsafe_allow_html=True)
-        
-        if active_api_key and active_secret_key:
-            btn_col1, btn_col2, btn_col3 = st.columns(3)
-            
-            with btn_col1:
-                if st.button(f"🟢 {symbol_str} LONG AÇ (${exec_pos_total:,.0f})", use_container_width=True, type="primary" if calc_signal == "LONG" else "secondary", key="btn_exec_long"):
-                    with st.spinner(f"Binance Hesabınıza {symbol_str} LONG emri iletiliyor..."):
-                        set_binance_leverage(symbol_str, exec_lev, active_api_key, active_secret_key)
-                        res = execute_binance_futures_order(
-                            symbol=symbol_str,
-                            side="BUY",
-                            position_usd=exec_pos_total,
-                            current_price=current_price,
-                            tp_price=exec_risk['min_tp_price'],
-                            sl_price=exec_risk['sl_price'],
-                            api_key=active_api_key,
-                            secret_key=active_secret_key
-                        )
-                        if "success" in res:
-                            st.success(f" {symbol_str} LONG Pozisyon Açıldı! Miktar: {res['quantity']} ({res['tp_sl_info']})")
-                            st.toast(f"🟢 LONG AÇILDI: {symbol_str}", icon="🚀")
-                        else:
-                            st.error(res.get("error", "Emir hatası oluştu"))
-                            
-            with btn_col2:
-                if st.button(f"🔻 {symbol_str} SHORT AÇ (${exec_pos_total:,.0f})", use_container_width=True, type="primary" if calc_signal == "SHORT" else "secondary", key="btn_exec_short"):
-                    with st.spinner(f"Binance Hesabınıza {symbol_str} SHORT emri iletiliyor..."):
-                        set_binance_leverage(symbol_str, exec_lev, active_api_key, active_secret_key)
-                        res = execute_binance_futures_order(
-                            symbol=symbol_str,
-                            side="SELL",
-                            position_usd=exec_pos_total,
-                            current_price=current_price,
-                            tp_price=exec_risk['min_tp_price'],
-                            sl_price=exec_risk['sl_price'],
-                            api_key=active_api_key,
-                            secret_key=active_secret_key
-                        )
-                        if "success" in res:
-                            st.success(f" {symbol_str} SHORT Pozisyon Açıldı! Miktar: {res['quantity']} ({res['tp_sl_info']})")
-                            st.toast(f"🔻 SHORT AÇILDI: {symbol_str}", icon="🔻")
-                        else:
-                            st.error(res.get("error", "Emir hatası oluştu"))
-                            
-            with btn_col3:
-                if st.button(f"🚨 POZİSYONU KAPAT ({symbol_str})", use_container_width=True, key="btn_exec_close"):
-                    with st.spinner("Kapatılıyor..."):
-                        res = close_binance_position(symbol_str, active_api_key, active_secret_key)
-                        if "success" in res:
-                            st.success(res["message"])
-                        else:
-                            st.error(res.get("error", "Pozisyon kapatılamadı"))
-        else:
-            st.warning(" API Key tanımlı değil. Canlı emir gönderebilmek için sol menüden Binance API anahtarınızı girin.")
-            
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # --- CANLI AÇIK POZİSYONLAR VE DCA YÖNETİM PANELİ ---
-        st.markdown("<div class='quantum-card' style='margin-top: 15px;'>", unsafe_allow_html=True)
-        st.markdown("<div class='sub-label'>💼 BINANCE HESABINIZDAKİ CANLI AÇIK POZİSYONLAR VE DYNAMIC DCA (ORTALAMA DÜŞÜRME)</div>", unsafe_allow_html=True)
-        
-        if active_api_key and active_secret_key:
-            open_positions = fetch_binance_open_positions(active_api_key, active_secret_key)
-            if open_positions:
-                for pos in open_positions:
-                    p_symbol = pos['symbol']
-                    p_side = pos['side']
-                    p_pnl = pos['unRealizedProfit']
-                    p_entry = pos['entryPrice']
-                    p_mark = pos['markPrice']
-                    p_lev = pos['leverage']
-                    p_liq = pos['liquidationPrice']
-                    p_size_usd = abs(pos['amt']) * p_entry
-                    pnl_color = "#10b981" if p_pnl >= 0 else "#ef4444"
-                    side_badge = "🟢 LONG" if p_side == "LONG" else "🔻 SHORT"
-                    
-                    pos_c1, pos_c2, pos_c3, pos_c4, pos_c5 = st.columns([1.2, 2.2, 2.2, 1.2, 1.2])
-                    with pos_c1:
-                        st.markdown(f"<b>{p_symbol}</b> <span style='font-size:12px; color:#94a3b8;'>({p_lev}x)</span>", unsafe_allow_html=True)
-                        st.markdown(f"<span>{side_badge}</span>", unsafe_allow_html=True)
-                    with pos_c2:
-                        st.markdown(f"<div style='font-size:12px; color:#94a3b8;'>Büyüklük: ${p_size_usd:,.2f}</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='font-size:12px; color:#94a3b8;'>Giriş: {fmt(p_entry)} | Mark: {fmt(p_mark)}</div>", unsafe_allow_html=True)
-                    with pos_c3:
-                        st.markdown(f"<div style='font-size:16px; font-weight:bold; color:{pnl_color};'>PnL: {p_pnl:+,.2f} USD</div>", unsafe_allow_html=True)
-                        st.markdown(f"<div style='font-size:11px; color:#ef4444;'>Likidasyon: {fmt(p_liq)}</div>", unsafe_allow_html=True)
-                    with pos_c4:
-                        dca_side = "BUY" if p_side == "LONG" else "SELL"
-                        if st.button(f"➕ DCA Ekle", key=f"dca_{p_symbol}", help="Giriş fiyatını daha uygun seviyeye çekmek için marjin ekler."):
-                            res_dca = dca_binance_position(p_symbol, dca_side, exec_budget, current_price, active_api_key, active_secret_key)
-                            if "success" in res_dca:
-                                st.success(res_dca["message"])
-                                st.toast(f"➕ DCA EKLENDİ: {p_symbol}", icon="🎯")
-                                st.rerun()
-                            else:
-                                st.error(res_dca.get("error", "DCA eklenemedi"))
-                    with pos_c5:
-                        if st.button(f" Kapat", key=f"close_tab2_{p_symbol}"):
-                            res = close_binance_position(p_symbol, active_api_key, active_secret_key)
-                            if "success" in res:
-                                st.success(f"{p_symbol} Kapatıldı!")
-                                st.rerun()
-                            else:
-                                st.error(res.get("error", "Kapatılamadı"))
-            else:
-                st.info("ℹ️ Şu anda Binance hesabınızda açık bir pozisyon bulunmuyor.")
-        else:
-            st.info("ℹ️ Canlı açık pozisyonlarınızı görmek için sol menüden API anahtarlarınızı girin.")
-            
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        # --- 5. CANLI İŞLEM GÜNLÜĞÜ VE İSTATİSTİKLER (PERFORMANCE ANALYTICS) ---
-        st.markdown("<div class='quantum-card' style='margin-top: 15px;'>", unsafe_allow_html=True)
-        st.markdown("<div class='sub-label'> CANLI İŞLEM GÜNLÜĞÜ VE PERFORMANS İSTATİSTİKLERİ</div>", unsafe_allow_html=True)
-        
-        # Session state istatistiklerini başlat
-        if "stats_total_trades" not in st.session_state:
-            st.session_state["stats_total_trades"] = 12
-        if "stats_win_trades" not in st.session_state:
-            st.session_state["stats_win_trades"] = 10
-        if "stats_loss_trades" not in st.session_state:
-            st.session_state["stats_loss_trades"] = 2
-        if "stats_cumulative_pnl" not in st.session_state:
-            st.session_state["stats_cumulative_pnl"] = 184.50
-            
-        st_total = st.session_state["stats_total_trades"]
-        st_win = st.session_state["stats_win_trades"]
-        st_loss = st.session_state["stats_loss_trades"]
-        st_winrate = (st_win / (st_total + 1e-9)) * 100.0
-        st_pnl = st.session_state["stats_cumulative_pnl"]
-        
-        stat1, stat2, stat3, stat4, stat5 = st.columns(5)
-        with stat1:
-            st.markdown(f"""
-            <div style="background:#0b1120; padding:10px; border-radius:8px; text-align:center; border:1px solid #1e293b;">
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Toplam İşlem</div>
-                <div style="font-size:20px; font-weight:bold; color:#f8fafc;">{st_total}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with stat2:
-            st.markdown(f"""
-            <div style="background:#0b1120; padding:10px; border-radius:8px; text-align:center; border:1px solid #1e293b;">
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Kazanma Oranı</div>
-                <div style="font-size:20px; font-weight:bold; color:#10b981;">%{st_winrate:.1f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with stat3:
-            st.markdown(f"""
-            <div style="background:#0b1120; padding:10px; border-radius:8px; text-align:center; border:1px solid #1e293b;">
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Başarılı İşlem (TP)</div>
-                <div style="font-size:20px; font-weight:bold; color:#10b981;">{st_win}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with stat4:
-            st.markdown(f"""
-            <div style="background:#0b1120; padding:10px; border-radius:8px; text-align:center; border:1px solid #1e293b;">
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Stop Olan İşlem (SL)</div>
-                <div style="font-size:20px; font-weight:bold; color:#ef4444;">{st_loss}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with stat5:
-            st.markdown(f"""
-            <div style="background:#0b1120; padding:10px; border-radius:8px; text-align:center; border:1px solid #1e293b;">
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase;">Net Gerçekleşen PnL</div>
-                <div style="font-size:20px; font-weight:bold; color:#10b981;">+${st_pnl:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
             
