@@ -1,5 +1,7 @@
 import streamlit as st
 
-st.set_page_config(page_title="Trade Kontrol Merkezi", page_icon="🚀", layout="wide")
-st.title("🚀 Merkezi Trade Kontrol Paneline Hoş Geldiniz")
-st.info("👈 Lütfen sol taraftaki menüden çalıştırmak istediğiniz botu seçin.")
+pg = st.navigation([
+    st.Page("pages/1_Canlı_Gösterge.py", title="Canlı Gösterge", icon="⚡", default=True),
+    st.Page("pages/2_Analiz_Tahmini.py", title="Analiz Tahmini", icon="📊"),
+])
+pg.run()
