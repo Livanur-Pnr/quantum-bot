@@ -28,8 +28,8 @@ streamlit run main.py
 kripto/
 ├── main.py                  # Streamlit giris noktasi
 ├── pages/
-│   ├── 1_Yapay_Zeka_Botu.py # AI Quant Engine (ML Ensemble)
-│   └── 2_Klasik_Bot.py      # Klasik Indikatör Botu
+│   ├── 1_Canlı_Gösterge.py  # AI Quant Engine (ML Ensemble)
+│   └── 2_Analiz_Tahmini.py  # Klasik Indikatör Botu
 ├── .env                     # API anahtarlari (gizli, Git'e eklenmez)
 ├── .env.example             # API anahtar sablonu
 ├── .gitignore               # Git gizlilik kurallari
