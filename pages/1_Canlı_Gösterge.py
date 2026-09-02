@@ -1408,8 +1408,11 @@ with col_tf:
     active_interval = timeframe_map[selected_tf_label]
 
 with col_lev:
-    leverage_options = [1, 2, 3, 5, 10, 15, 20, 25, 50, 75, 100]
-    selected_leverage = st.selectbox("⚡ Kaldıraç:", leverage_options, index=4, format_func=lambda x: f"{x}x")
+    # ONEMLI: Kaldirac artik sabit secenekler yerine serbest metin/sayi girisi - kullanici
+    # borsanin izin verdigi herhangi bir degeri (orn. 37x, 63x) yazabilir. SL/TP hesaplamasi
+    # (compute_institutional_risk_levels) zaten formul bazli oldugundan her kaldirac degerinde
+    # dogru sekilde calisir; sabit bir liste ile sinirli degildir.
+    selected_leverage = int(st.number_input("⚡ Kaldıraç (x):", min_value=1, max_value=200, value=10, step=1, format="%d", help="Borsanızın izin verdiği herhangi bir kaldıraç değerini yazabilirsiniz (1x - 200x)."))
 
 with col_budget:
     # ONEMLI: API baglantisi varsa VE kullanici "kasa siniri olmadan genel analiz" secmediyse,
