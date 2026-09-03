@@ -486,7 +486,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     # geriye kaydirinca eski sinyalleri de gorur), ancak ACILIS gorunumu son VISIBLE_CANDLES
     # muma odaklanir; hepsi ayni anda gosterilince mumlar piksel-alti genislige dusup ic ice
     # geciyor ve hangi mumda sinyal verildigi secilemiyordu.
-    VISIBLE_CANDLES = 320
+    VISIBLE_CANDLES = 210
     visible_n = min(VISIBLE_CANDLES, len(df))
     vis_start_pos = len(df) - visible_n
 
