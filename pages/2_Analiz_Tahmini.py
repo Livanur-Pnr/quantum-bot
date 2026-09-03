@@ -550,7 +550,13 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
         showlegend=False,
     ), row=1, col=1)
 
-    MAX_ENTRY_ANNOTATIONS = 60  # tum render'larda SABIT annotation sayisi icin ust sinir
+    # ONEMLI - RENDER MALIYETI: on_select="rerun" kaldirilsa, figur yapisi sabitlense bile
+    # Streamlit'in @st.fragment(run_every=...) icindeki st.plotly_chart bilesenini HER
+    # yenilemede yeniden monte ettigi kanitlandi (framework davranisi, Python tarafinda
+    # onlenemiyor). Bu yuzden asil kaldiraç kolu artik "remount'u onlemek" degil, "remount'un
+    # gorunme suresini minimize etmek" - annotation sayisi olabildigince dusuk tutulur (gercekci
+    # senaryoda gorunur pencerede nadiren 20'den fazla sinyal olur).
+    MAX_ENTRY_ANNOTATIONS = 20  # tum render'larda SABIT annotation sayisi icin ust sinir
     _entry_annotations_used = 0
 
     if not long_e.empty:
@@ -777,7 +783,7 @@ def main():
         # CHART_BUFFER_CANDLES kadarini vermek yeterli - kayit defteri tablosu yine TUM 1500
         # mumluk gecmisten (entries_df, asagida) beslenmeye devam eder, sadece GRAFIGE giden
         # veri kucultuluyor.
-        CHART_BUFFER_CANDLES = 500
+        CHART_BUFFER_CANDLES = 260
         chart_df = df.tail(CHART_BUFFER_CANDLES).copy()
         chart_entries_df = entries_df[entries_df.index.isin(chart_df.index)]
 
