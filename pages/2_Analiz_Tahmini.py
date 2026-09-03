@@ -482,13 +482,26 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
             prev_pos = pos
         return [base + int(t) * step for t in tiers_sorted]
 
+    # ONEMLI - MUM OKUNABILIRLIGI: Tum gecmis (1500 mum) grafikte veri olarak durur (kullanici
+    # geriye kaydirinca eski sinyalleri de gorur), ancak ACILIS gorunumu son VISIBLE_CANDLES
+    # muma odaklanir; hepsi ayni anda gosterilince mumlar piksel-alti genislige dusup ic ice
+    # geciyor ve hangi mumda sinyal verildigi secilemiyordu.
+    VISIBLE_CANDLES = 320
+    visible_n = min(VISIBLE_CANDLES, len(df))
+    vis_start_pos = len(df) - visible_n
+
     # ONEMLI - UST USTE BINME: Tum girisler icin etiket kutusu basmak, sinyallerin sik geldigi
-    # bolgelerde kutulari ust uste bindiriyordu. Bu yuzden SADECE en guncel BOX_LIMIT adet
-    # sinyal etiket kutusu (AI LONG/SHORT | %.. TP/SL) alir; daha eski sinyaller sadece kucuk
-    # ok isareti olarak gosterilir (detaylari alttaki kayit defteri tablosunda ve hover'da
-    # zaten mevcut). Bu, kullanicinin referans gorselindeki kutucuk yogunluguna da uyuyor.
+    # bolgelerde kutulari ust uste bindiriyordu. Bu yuzden SADECE acilis penceresi ICINDE kalan
+    # (ve sol kenarda kirpilmamasi icin kenardan en az 10 mum iceride olan) en guncel BOX_LIMIT
+    # sinyal etiket kutusu alir; digerleri sadece kucuk ok isareti olarak gosterilir - detaylari
+    # alttaki kayit defteri tablosunda ve hover'da zaten mevcut.
     BOX_LIMIT = 6
-    box_index_set = set(entries_df.sort_index().index[-BOX_LIMIT:]) if (entries_df is not None and not entries_df.empty) else set()
+    box_index_set = set()
+    if entries_df is not None and not entries_df.empty:
+        _sorted_entries = entries_df.sort_index()
+        _entry_pos = df.index.get_indexer(_sorted_entries.index)
+        _in_window = [idx for idx, pos in zip(_sorted_entries.index, _entry_pos) if pos >= vis_start_pos + 10]
+        box_index_set = set(_in_window[-BOX_LIMIT:])
 
     if entries_df is not None and not entries_df.empty:
         long_e = entries_df[entries_df["ai_signal"] == "LONG"]
@@ -589,8 +602,17 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
 
     fig.update_layout(template="plotly_dark", paper_bgcolor="#0b0e14", plot_bgcolor="#0b0e14", height=850, margin=dict(l=10, r=70, t=48, b=20), hovermode="x unified", showlegend=False, xaxis_rangeslider_visible=False)
     fig.update_xaxes(gridcolor="#1c212d", zeroline=False, showspikes=True, spikecolor="#2a2e39", rangebreaks=[])
-    fig.update_yaxes(gridcolor="#1c212d", zeroline=False, side="right") 
-    fig.update_yaxes(range=[0, 100], row=2, col=1) 
+    fig.update_yaxes(gridcolor="#1c212d", zeroline=False, side="right")
+    fig.update_yaxes(range=[0, 100], row=2, col=1)
+
+    # Y ekseni de sadece gorunen pencereye gore olceklenir; aksi halde tum gecmisin fiyat
+    # araligi (orn. 64k -> 90k) yuzunden guncel mumlar duz bir seride sikisip kaliyordu.
+    vis_df = df.tail(visible_n)
+    y_lo, y_hi = float(vis_df["low"].min()), float(vis_df["high"].max())
+    y_pad = (y_hi - y_lo) * 0.14 if y_hi > y_lo else max(abs(y_hi) * 0.01, 1.0)
+    fig.update_xaxes(range=[vis_df.index[0], future_idx], row=1, col=1)
+    fig.update_xaxes(range=[vis_df.index[0], future_idx], row=2, col=1)
+    fig.update_yaxes(range=[y_lo - y_pad, y_hi + y_pad], row=1, col=1)
     return fig
 
 # ─────────────────────────────────────────────────────────────────
