@@ -893,8 +893,15 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
     symbol_tf_hash = str(len(train_df)) + "_" + str(train_df['close'].iloc[-1])
     
     ensemble, final_features = _cached_train_quantum_ai(symbol_tf_hash, train_df, feature_cols)
-    
-    X_current = df[final_features].tail(1)
+
+    # ONEMLI - KARARLILIK: df'nin SON satiri henuz KAPANMAMIS (olusmakta olan) canli mumdur;
+    # onun RSI/MACD/OB gibi featurelari her fiyat tikinde (birkac saniyede bir) degisebiliyor,
+    # bu da tahmin yuzdesinin (LONG/SHORT) saniyeler icinde 20-30 puan sicramasina yol aciyordu
+    # (kullanici: "tahminler cok sik degisiyor, kararli olmasini istiyorum"). Bu yuzden tahmin
+    # EN SON KAPANMIS muma gore yapilir - bu da mum kapanana kadar (secili zaman dilimi
+    # suresince) SABIT kalmasini garanti eder.
+    stable_row_idx = -2 if len(df) > 1 else -1
+    X_current = df[final_features].iloc[[stable_row_idx]]
     raw_probs = ensemble.predict_proba(X_current)[0]
     classes = list(ensemble.classes_)
     
@@ -905,7 +912,7 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
     p_long = p_long / total
     p_short = p_short / total
     
-    latest = df.iloc[-1]
+    latest = df.iloc[stable_row_idx]
     if latest['rsi'] > 55 and latest['macd'] > 0: p_long += 0.05
     elif latest['rsi'] < 45 and latest['macd'] < 0: p_short += 0.05
 
@@ -1487,7 +1494,15 @@ def render_quantum_terminal():
 
     # 2. Özellik Mühendisliği (Sembol ve Zaman Dilimi Geçildi)
     df_features = compute_quantum_features(df_raw, symbol=symbol_str, interval=active_interval, exchange_id=selected_exchange_id)
-    latest_row = df_features.iloc[-1]
+    # ONEMLI - KARARLILIK: df_features'in SON satiri henuz KAPANMAMIS (olusmakta olan) canli
+    # mumdur; RSI/MACD/EMA/hacim gibi degerleri her fiyat tikinde degisebiliyordu. Bu da
+    # confluence skorunu (ve dolayisiyla GÜÇLÜ/ZAYIF/NÖTR siniflandirmasini) ve asagidaki
+    # indikator radarinda gosterilen degerleri saniyeler icinde tutarsizca sallantiya
+    # sokuyordu. "latest_row" artik EN SON KAPANMIS muma isaret eder - hem AI tahmini hem
+    # confluence filtreleri hem de gorunen indikator degerleri, mum kapanana kadar (secili
+    # zaman dilimi suresince) birbiriyle TUTARLI ve SABIT kalir. Anlik fiyat (current_price)
+    # zaten ayri bir ticker kaynagindan geldigi icin bundan etkilenmez, canli kalmaya devam eder.
+    latest_row = df_features.iloc[-2] if len(df_features) > 1 else df_features.iloc[-1]
 
     # 3. Yapay Zeka Modeli Eğitimi ve Olasılık Tahmini
     ai_result = train_and_predict_quantum_ai(df_features)

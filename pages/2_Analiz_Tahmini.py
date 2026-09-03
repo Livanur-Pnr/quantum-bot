@@ -424,13 +424,24 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
 
     threshold = threshold / 100.0  # Normalize threshold
 
+    # ONEMLI - KARARLILIK: df'nin SON satiri henuz KAPANMAMIS (olusmakta olan) canli mumdur;
+    # onun RSI/MACD/OB gibi featurelari her fiyat tikinde (birkaç saniyede bir) degisebiliyor,
+    # bu da AI olasiliginin (prob_long/prob_short) saniyeler icinde 20-30 puan sicramasina yol
+    # aciyordu (kullanici bunu fark etti: "tahminler cok sik degisiyor, kararli olmasini
+    # istiyorum"). Bu yuzden SADECE KAPANMIS mumlar yeni bir "giris" (is_entry) tetikleyebilir;
+    # son (kapanmamis) mum icin asla yeni giris isaretlenmez - boylece bir sinyal, ancak mum
+    # gercekten kapandiktan (yani secili zaman dilimi kadar - 1dk/15dk/... - sure gectikten)
+    # SONRA kalici olarak kayit defterine/grafige eklenir; daha once goruntulenip sonra "kaybolan"
+    # hayalet sinyaller olusmaz.
+    last_closed_idx = len(df) - 2
+
     for i in range(len(df)):
         entered_now = False
         if in_pos:
             if pos_type == 'LONG' and (df['low'].iloc[i] <= sl or df['high'].iloc[i] >= tp): in_pos = False
             elif pos_type == 'SHORT' and (df['high'].iloc[i] >= sl or df['low'].iloc[i] <= tp): in_pos = False
 
-        if not in_pos:
+        if not in_pos and i <= last_closed_idx:
             if df['prob_long'].iloc[i] > (threshold * 100):
                 in_pos, pos_type, tp, sl = True, 'LONG', df['close'].iloc[i] + tp_dist_arr[i], df['close'].iloc[i] - sl_dist_arr[i]
                 entered_now = True
@@ -754,8 +765,13 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8
-    is_long = last['prob_long'] > last['prob_short']
-    live_prob, live_dir = (last["prob_long"], "LONG") if is_long else (last["prob_short"], "SHORT")
+    # ONEMLI - KARARLILIK: Yon/guven (prob_long, prob_short) HENUZ KAPANMAMIS son mumdan degil,
+    # EN SON KAPANMIS mumdan (stable_row) okunur - bu, "CANLI TAHMİN" kutusunun mum kapanana
+    # kadar (secili zaman dilimi suresince) SABIT kalmasini saglar. Fiyat (last_price) yine de
+    # canli/guncel kalir - kullanici o an gerceklesen guncel fiyati gormeye devam eder.
+    stable_row = df.iloc[-2] if len(df) > 1 else last
+    is_long = stable_row['prob_long'] > stable_row['prob_short']
+    live_prob, live_dir = (stable_row["prob_long"], "LONG") if is_long else (stable_row["prob_short"], "SHORT")
     color = "#22ab94" if is_long else "#f7525f"
     last_price = last['close']
 
@@ -882,7 +898,12 @@ def main():
             df, train_acc, active_features = train_and_predict_ai(df, target_candles, ai_threshold, tp_m, sl_m, timeframe=tf)
     
         last, last_price, atr = df.iloc[-1], df.iloc[-1]['close'], df.iloc[-1]['atr']
-        
+        # ONEMLI - KARARLILIK: build_realtime_chart'taki ayni mantik burada da uygulanir - AI
+        # yon/guven okumasi EN SON KAPANMIS mumdan (stable_row) yapilir, fiyat (last_price)
+        # canli kalir. Bu sayede "CANLI LONG %/CANLI SHORT %" karti ve "İZLEMEDE/SİNYAL
+        # ONAYLANDI" kutusu, mum kapanana kadar sabit kalir - saniyeler icinde sicramaz.
+        stable_row = df.iloc[-2] if len(df) > 1 else last
+
         with paper_trade_slot.container():
             st.markdown("## 💸 SANAL İŞLEM (PAPER TRADING)")
             if st.session_state.position is None:
@@ -911,8 +932,8 @@ def main():
                     st.session_state.position = None
                     st.rerun()
         
-        is_long = last["prob_long"] > last["prob_short"]
-        live_prob, live_dir = (last["prob_long"], "LONG") if is_long else (last["prob_short"], "SHORT")
+        is_long = stable_row["prob_long"] > stable_row["prob_short"]
+        live_prob, live_dir = (stable_row["prob_long"], "LONG") if is_long else (stable_row["prob_short"], "SHORT")
         live_color = "#22ab94" if is_long else "#f7525f"
         live_tp_dist = clamp_tp_sl_dist(atr * tp_m, last_price, tf, "tp")
         live_sl_dist = clamp_tp_sl_dist(atr * sl_m, last_price, tf, "sl")
@@ -921,8 +942,8 @@ def main():
     
         c1, c2, c3, c4 = st.columns(4)
         with c1: st.markdown(f'<div class="metric-card"><h4>💰 {symbol} FİYAT</h4><p class="value white">${last_price:,.4f}</p></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="metric-card"><h4>🟢 CANLI LONG %</h4><p class="value green">%{last["prob_long"]:.1f}</p></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="metric-card"><h4>🔴 CANLI SHORT %</h4><p class="value red">%{last["prob_short"]:.1f}</p></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="metric-card"><h4>🟢 CANLI LONG %</h4><p class="value green">%{stable_row["prob_long"]:.1f}</p></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="metric-card"><h4>🔴 CANLI SHORT %</h4><p class="value red">%{stable_row["prob_short"]:.1f}</p></div>', unsafe_allow_html=True)
         with c4: st.markdown(f'<div class="metric-card" style="border-color:#2962ff"><h4>💸 SANAL PORTFÖY</h4><p class="value white">${st.session_state.balance:,.0f}</p></div>', unsafe_allow_html=True)
             
         c5, c6, c7, c8 = st.columns(4)
