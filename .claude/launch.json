@@ -1,0 +1,18 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "kripto-bot",
+      "runtimeExecutable": "streamlit",
+      "runtimeArgs": [
+        "run",
+        "C:\\Users\\ACER\\OneDrive\\Masaüstü\\kripto\\main.py",
+        "--server.port",
+        "8501",
+        "--server.headless",
+        "true"
+      ],
+      "port": 8501
+    }
+  ]
+}
