@@ -908,10 +908,15 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
     latest = df.iloc[-1]
     if latest['rsi'] > 55 and latest['macd'] > 0: p_long += 0.05
     elif latest['rsi'] < 45 and latest['macd'] < 0: p_short += 0.05
-        
-    p_long = min(max(p_long, 0.0), 1.0)
-    p_short = min(max(p_short, 0.0), 1.0)
-    
+
+    # ONEMLI: RSI/MACD bonusu eklendikten sonra p_long+p_short artik 1.0 (%100) etmiyordu -
+    # bu yuzden ekranda "LONG: %72.6 | SHORT: %32.4" gibi toplami %100'u asan (veya altinda
+    # kalan) degerler goruluyordu. Bonus sonrasi tekrar normalize edilerek iki olasiligin
+    # HER ZAMAN toplamda %100 etmesi garanti edilir; yon karari (max olan taraf) degismez.
+    post_total = p_long + p_short + 1e-9
+    p_long = p_long / post_total
+    p_short = p_short / post_total
+
     final_dir = "LONG" if p_long > p_short else ("SHORT" if p_short > p_long else "NEUTRAL")
     confidence = max(p_long, p_short) * 100.0
     
