@@ -503,59 +503,84 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
         _in_window = [idx for idx, pos in zip(_sorted_entries.index, _entry_pos) if pos >= vis_start_pos + 10]
         box_index_set = set(_in_window[-BOX_LIMIT:])
 
-    if entries_df is not None and not entries_df.empty:
+    # ONEMLI - GERCEK FLAS KOK NEDENI: Streamlit'in plotly bileseni, figur'un YAPISI (trace
+    # SAYISI, annotation SAYISI) bir onceki render'dan FARKLI oldugunda component'i baytan
+    # olusturuyor (siyah bosluk + sicrama olarak goruluyor); sadece VERI degisirse (ayni sayida
+    # trace/annotation, farkli x/y/text) sorunsuz, aninda guncelleniyor. entries_df (canli model
+    # her yenilemede yeniden egitildigi icin) sinyal SAYISI her calisma da degisebiliyordu, bu da
+    # annotation/trace sayisini degistirip her 5 saniyede bir tam yeniden cizime zorluyordu.
+    # COZUM: Trace sayisi ve annotation sayisi HER render'da SABIT tutulur - gercek sinyal sayisi
+    # ne olursa olsun, eksik kalan slotlar GORUNMEZ (opacity=0) "bos" annotation'larla doldurulur.
+    if entries_df is None or entries_df.empty:
+        _empty_cols = ["ai_signal", "prob_long", "prob_short", "active_tp", "active_sl", "atr", "low", "high", "close"]
+        long_e = pd.DataFrame(columns=_empty_cols)
+        short_e = pd.DataFrame(columns=_empty_cols)
+    else:
         long_e = entries_df[entries_df["ai_signal"] == "LONG"]
         short_e = entries_df[entries_df["ai_signal"] == "SHORT"]
+    long_y = (long_e["low"] - (long_e["atr"] * 0.3)) if not long_e.empty else pd.Series(dtype=float)
+    short_y = (short_e["high"] + (short_e["atr"] * 0.3)) if not short_e.empty else pd.Series(dtype=float)
 
-        if not long_e.empty:
-            long_y = long_e["low"] - (long_e["atr"] * 0.3)
-            fig.add_trace(go.Scatter(
-                x=long_e.index, y=long_y,
-                mode="markers", name="AI LONG",
-                marker=dict(size=17, color="#22ab94", opacity=0.001),
-                customdata=np.stack([
-                    long_e.index.strftime("%Y-%m-%d %H:%M"),
-                    ["LONG"] * len(long_e),
-                    long_e["prob_long"].map(lambda v: f"{v:.1f}"),
-                    long_e["close"].map(format_price),
-                    long_e["active_tp"].map(format_price),
-                    long_e["active_sl"].map(format_price),
-                ], axis=-1),
-                hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
-                showlegend=False,
-            ), row=1, col=1)
-            long_offsets = _stagger_offsets(long_e.index, base=38, step=55)
-            for xi, yi, prob, tp_v, sl_v, ay_off in zip(long_e.index, long_y, long_e["prob_long"], long_e["active_tp"], long_e["active_sl"], long_offsets):
-                if xi in box_index_set:
-                    box_text = f"<b>AI LONG</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
-                    fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(34,197,94,0.14)", bordercolor="rgba(34,197,94,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
-                else:
-                    fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=15, standoff=1, row=1, col=1)
+    def _customdata(e: pd.DataFrame, direction: str, prob_col: str) -> np.ndarray:
+        if e.empty:
+            return np.empty((0, 6), dtype=object)
+        return np.stack([
+            e.index.strftime("%Y-%m-%d %H:%M"),
+            [direction] * len(e),
+            e[prob_col].map(lambda v: f"{v:.1f}"),
+            e["close"].map(format_price),
+            e["active_tp"].map(format_price),
+            e["active_sl"].map(format_price),
+        ], axis=-1)
 
-        if not short_e.empty:
-            short_y = short_e["high"] + (short_e["atr"] * 0.3)
-            fig.add_trace(go.Scatter(
-                x=short_e.index, y=short_y,
-                mode="markers", name="AI SHORT",
-                marker=dict(size=17, color="#f7525f", opacity=0.001),
-                customdata=np.stack([
-                    short_e.index.strftime("%Y-%m-%d %H:%M"),
-                    ["SHORT"] * len(short_e),
-                    short_e["prob_short"].map(lambda v: f"{v:.1f}"),
-                    short_e["close"].map(format_price),
-                    short_e["active_tp"].map(format_price),
-                    short_e["active_sl"].map(format_price),
-                ], axis=-1),
-                hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
-                showlegend=False,
-            ), row=1, col=1)
-            short_offsets = _stagger_offsets(short_e.index, base=-38, step=-55)
-            for xi, yi, prob, tp_v, sl_v, ay_off in zip(short_e.index, short_y, short_e["prob_short"], short_e["active_tp"], short_e["active_sl"], short_offsets):
-                if xi in box_index_set:
-                    box_text = f"<b>AI SHORT</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
-                    fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(239,68,68,0.14)", bordercolor="rgba(239,68,68,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
-                else:
-                    fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=-15, standoff=1, row=1, col=1)
+    # ONEMLI: Bu iki trace ARTIK KOSULSUZ ekleniyor (bos olsa bile) - boylece trace SAYISI
+    # (5) her render'da ayni kalir; sadece icindeki nokta sayisi degisir ki bu sorunsuz.
+    fig.add_trace(go.Scatter(
+        x=long_e.index, y=long_y, mode="markers", name="AI LONG",
+        marker=dict(size=17, color="#22ab94", opacity=0.001),
+        customdata=_customdata(long_e, "LONG", "prob_long"),
+        hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
+        showlegend=False,
+    ), row=1, col=1)
+    fig.add_trace(go.Scatter(
+        x=short_e.index, y=short_y, mode="markers", name="AI SHORT",
+        marker=dict(size=17, color="#f7525f", opacity=0.001),
+        customdata=_customdata(short_e, "SHORT", "prob_short"),
+        hovertemplate="<b>AI %{customdata[1]}</b> | Güven: %%{customdata[2]}<br>Zaman: %{customdata[0]}<br>Giriş: %{customdata[3]}<br>TP: %{customdata[4]} | SL: %{customdata[5]}<extra></extra>",
+        showlegend=False,
+    ), row=1, col=1)
+
+    MAX_ENTRY_ANNOTATIONS = 60  # tum render'larda SABIT annotation sayisi icin ust sinir
+    _entry_annotations_used = 0
+
+    if not long_e.empty:
+        long_offsets = _stagger_offsets(long_e.index, base=38, step=55)
+        for xi, yi, prob, tp_v, sl_v, ay_off in list(zip(long_e.index, long_y, long_e["prob_long"], long_e["active_tp"], long_e["active_sl"], long_offsets))[:MAX_ENTRY_ANNOTATIONS]:
+            if xi in box_index_set:
+                box_text = f"<b>AI LONG</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
+                fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(34,197,94,0.14)", bordercolor="rgba(34,197,94,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
+            else:
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=15, standoff=1, row=1, col=1)
+            _entry_annotations_used += 1
+
+    if not short_e.empty:
+        short_offsets = _stagger_offsets(short_e.index, base=-38, step=-55)
+        for xi, yi, prob, tp_v, sl_v, ay_off in list(zip(short_e.index, short_y, short_e["prob_short"], short_e["active_tp"], short_e["active_sl"], short_offsets))[:max(0, MAX_ENTRY_ANNOTATIONS - _entry_annotations_used)]:
+            if xi in box_index_set:
+                box_text = f"<b>AI SHORT</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
+                fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(239,68,68,0.14)", bordercolor="rgba(239,68,68,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
+            else:
+                fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=-15, standoff=1, row=1, col=1)
+            _entry_annotations_used += 1
+
+    # ONEMLI: Eksik kalan slotlar GORUNMEZ annotation'larla dolduruluyor - boylece annotation
+    # DIZISININ UZUNLUGU (Streamlit/Plotly'nin yapisal degisiklik olarak algiladigi sey) sinyal
+    # sayisindan BAGIMSIZ olarak her zaman TAM MAX_ENTRY_ANNOTATIONS olur.
+    _dummy_x = df.index[0]
+    _dummy_y = float(df["close"].iloc[0])
+    while _entry_annotations_used < MAX_ENTRY_ANNOTATIONS:
+        fig.add_annotation(x=_dummy_x, y=_dummy_y, text="", showarrow=False, opacity=0, row=1, col=1)
+        _entry_annotations_used += 1
 
     last_idx, last = df.index[-1], df.iloc[-1]
     future_idx = last_idx + (df.index[-1] - df.index[-2]) * 8
