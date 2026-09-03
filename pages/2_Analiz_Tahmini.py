@@ -742,32 +742,32 @@ def main():
         entries_df = df[df.get("is_entry", False) == True].copy() if "is_entry" in df.columns else df.iloc[0:0]
         entries_df = entries_df.sort_index(ascending=False).head(100)
 
-        fig = build_realtime_chart(df.copy(), ai_threshold, tp_m, sl_m, timeframe=tf, entries_df=entries_df)
+        # ONEMLI - PERFORMANS/FLAS SORUNU: Grafik her 5 saniyede bir YENIDEN CIZILIYOR (Streamlit'in
+        # plotly bileseni, veri her degistiginde SVG'yi bastan olusturuyor - bunu component
+        # seviyesinde engelleme imkanimiz yok). Grafige TAM 1500 mumluk veriyi vermek, her
+        # yenilemede devasa bir SVG'nin (1500 mum + 1500x2 olasilik cizgisi + tum etiketler)
+        # sifirdan insa edilmesine yol aciyor; bu da tarayicida gozle gorulur bir "donma/sicrama"
+        # (kullanicinin bahsettigi "kapanip acilma") yaratiyor. Grafik zaten varsayilan olarak
+        # sadece son ~VISIBLE_CANDLES mumu gosterdigi icin (geri kaydirma payi dahil) son
+        # CHART_BUFFER_CANDLES kadarini vermek yeterli - kayit defteri tablosu yine TUM 1500
+        # mumluk gecmisten (entries_df, asagida) beslenmeye devam eder, sadece GRAFIGE giden
+        # veri kucultuluyor.
+        CHART_BUFFER_CANDLES = 500
+        chart_df = df.tail(CHART_BUFFER_CANDLES).copy()
+        chart_entries_df = entries_df[entries_df.index.isin(chart_df.index)]
 
-        # ONEMLI: on_select="rerun" + selection_mode=("points",) sayesinde, grafikteki bir
-        # ucgen isaretcisine TIKLANDIGINDA o noktanin customdata'si (zaman/yon/guven/giris/TP/SL)
-        # geri doner ve asagida ayrintili bir "kutu" olarak gosterilir - kullanicinin istedigi
-        # "isaretin ustune tiklayinca bilgi kutusu acilsin" davranisi bu sekilde saglaniyor.
-        chart_event = st.plotly_chart(
+        fig = build_realtime_chart(chart_df, ai_threshold, tp_m, sl_m, timeframe=tf, entries_df=chart_entries_df)
+
+        # ONEMLI: Grafikteki tiklama secimi (on_select) bu ortamda guvenilir dogrulanamadi ve
+        # Streamlit'in secim durumunu takip etmesi grafik bilesenini her yenilemede daha agir
+        # islem yapmaya zorluyordu. Tiklayip detay gorme ozelligi, HER ZAMAN GUVENILIR calisan
+        # asagidaki kayit defteri tablosu (st.dataframe + on_select) uzerinden saglaniyor;
+        # grafik burada sadece GORSEL olarak sinyalleri isaretliyor (hover ile detay gosterir).
+        st.plotly_chart(
             fig, use_container_width=True, height=850,
             config={'displayModeBar': False, 'scrollZoom': True},
-            on_select="rerun", selection_mode=("points",),
             key=f"realtime_chart_{symbol}_{tf}",
         )
-
-        clicked_points = []
-        if chart_event and chart_event.get("selection", {}).get("points"):
-            clicked_points = chart_event["selection"]["points"]
-
-        # ONEMLI: Ayni x konumunda mum (Fiyat) serisi de bulundugundan, "x unified" hover modu
-        # tiklamada BIRDEN FAZLA nokta doner (biri isaretci, digeri altindaki mum - customdata'si
-        # olmayan). Bu yuzden ilk noktayi degil, customdata'si OLAN ilk noktayi ariyoruz.
-        cd = None
-        for _pt in clicked_points:
-            _cd = _pt.get("customdata")
-            if _cd and len(_cd) >= 6:
-                cd = _cd
-                break
 
         # ONEMLI: Grafikteki kutucuklar cok sik oldugunda ust uste binip okunmaz hale
         # geliyordu. Bunun icin grafigin ALTINA, su ana kadar uretilen TUM giris sinyallerini
@@ -780,7 +780,7 @@ def main():
 
         table_cd = None
         if not entries_df.empty:
-            st.caption(f"Yapay zekanın bu coin/zaman dilimi için ürettiği son {len(entries_df)} giriş sinyali (en yeni en üstte). Yeni bir sinyal oluştuğunda otomatik olarak buraya eklenir. Bir satıra (veya grafikteki ok işaretçilerinden birine) tıklayarak o sinyalin ayrıntılarını aşağıda görebilirsiniz.")
+            st.caption(f"Yapay zekanın bu coin/zaman dilimi için ürettiği son {len(entries_df)} giriş sinyali (en yeni en üstte). Yeni bir sinyal oluştuğunda otomatik olarak buraya eklenir. Bir satıra tıklayarak o sinyalin ayrıntılarını aşağıda görebilirsiniz.")
 
             display_rows = []
             for idx, row in entries_df.iterrows():
@@ -836,7 +836,7 @@ def main():
 
         # Tablo satır tıklaması, grafik işaretçi tıklamasından önceliklidir (daha güvenilir
         # şekilde doğrulanabiliyor); grafik tıklaması çalışırsa o da aynı kutuyu besler.
-        final_cd = table_cd or cd
+        final_cd = table_cd
         if final_cd:
             ts_c, dir_c, conf_c, entry_c, tp_c, sl_c = final_cd[:6]
             dir_color_c = "#22ab94" if dir_c == "LONG" else "#f7525f"
