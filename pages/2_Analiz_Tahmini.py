@@ -528,15 +528,28 @@ def render_live_chart_component(chart_key: str, height: int = 850) -> None:
     # bu bilesene HIC dokunmaz, sadece kullanici gercekten coin/zaman dilimi degistirdiginde
     # (beklenen/istenen bir "yeniden yukleme") yeniden kurulur.
     data_url = f"http://{_CHART_DATA_HOST}:{_CHART_DATA_PORT}/chart_data?key={chart_key}"
+    # ONEMLI - GENISLIK HATASI FIX: "Grafik yukleniyor..." metnini ortalamak icin kullanilan
+    # display:flex/justify-content:center stilleri, DAHA SONRA Plotly.newPlot() AYNI div'e
+    # cizim yaptiginda da uzerinde kaliyordu; bu da Plotly'nin genislik hesaplamasini bozup
+    # grafigin panelin sadece bir kismini kaplamasina (sol tarafta bosluk) yol aciyordu. Cozum:
+    # yukleniyor metni AYRI, Plotly div'inin UZERINE bindirilen bir katmanda gosteriliyor;
+    # Plotly'nin kendi div'i (live-plotly-chart) hicbir zaman flex/center stili almiyor.
     html = f"""
-    <div id="live-plotly-chart" style="width:100%; height:{height}px; background:#0b0e14;
-         display:flex; align-items:center; justify-content:center; color:#94a3b8;
-         font-family:'Inter',sans-serif; font-size:13px;">Grafik yükleniyor…</div>
+    <style>html,body{{margin:0;padding:0;background:#0b0e14;}}</style>
+    <div style="position:relative; width:100%; height:{height}px;">
+        <div id="live-plotly-chart" style="width:100%; height:100%;"></div>
+        <div id="live-plotly-loading" style="position:absolute; inset:0; display:flex;
+             align-items:center; justify-content:center; color:#94a3b8;
+             font-family:'Inter',sans-serif; font-size:13px; background:#0b0e14; pointer-events:none;">
+             Grafik yükleniyor…
+        </div>
+    </div>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
     <script>
     (function() {{
         const dataUrl = {data_url!r};
         const el = document.getElementById('live-plotly-chart');
+        const loadingEl = document.getElementById('live-plotly-loading');
         let initialized = false;
         async function poll() {{
             try {{
@@ -544,7 +557,7 @@ def render_live_chart_component(chart_key: str, height: int = 850) -> None:
                 const spec = await resp.json();
                 if (spec && spec.data && spec.data.length) {{
                     if (!initialized) {{
-                        el.textContent = '';
+                        loadingEl.style.display = 'none';
                         Plotly.newPlot(el, spec.data, spec.layout, {{displayModeBar: false, scrollZoom: true, responsive: true}});
                         initialized = true;
                     }} else {{
@@ -554,6 +567,7 @@ def render_live_chart_component(chart_key: str, height: int = 850) -> None:
             }} catch (e) {{ /* sessizce gec, bir sonraki denemede tekrar dene */ }}
             setTimeout(poll, 1500);
         }}
+        window.addEventListener('resize', function() {{ if (initialized) Plotly.Plots.resize(el); }});
         poll();
     }})();
     </script>
