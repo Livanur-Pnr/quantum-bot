@@ -32,7 +32,7 @@ st.set_page_config(
 )
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-flash-lite-latest"
 GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 # Ücretsiz, anahtar gerektirmeyen resmi RSS akışları.
@@ -185,7 +185,7 @@ SADECE şu JSON formatında cevap ver, başka hiçbir açıklama ekleme:
             timeout=30,
         )
         if resp.status_code != 200:
-            return {"ozet": f"(Gemini API hatası: HTTP {resp.status_code})", "yon": "NOTR", "gerekce": resp.text[:150]}
+            return {"ozet": f"(Gemini API hatası: HTTP {resp.status_code})", "yon": "NOTR", "gerekce": resp.text[:150], "ok": False}
 
         data = resp.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -199,9 +199,10 @@ SADECE şu JSON formatında cevap ver, başka hiçbir açıklama ekleme:
             "ozet": str(parsed.get("ozet", "")).strip(),
             "yon": yon,
             "gerekce": str(parsed.get("gerekce", "")).strip(),
+            "ok": True,
         }
     except Exception as e:
-        return {"ozet": f"(Özetleme sırasında hata: {e})", "yon": "NOTR", "gerekce": ""}
+        return {"ozet": f"(Özetleme sırasında hata: {e})", "yon": "NOTR", "gerekce": "", "ok": False}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -225,7 +226,8 @@ def render_news_panel():
         published = format_relative_time(post["published_at"])
         description = post["description"] or title
 
-        if GEMINI_API_KEY and post_id not in st.session_state.news_summary_cache:
+        cached = st.session_state.news_summary_cache.get(post_id)
+        if GEMINI_API_KEY and (cached is None or not cached.get("ok")):
             st.session_state.news_summary_cache[post_id] = summarize_news_with_gemini(
                 GEMINI_API_KEY, title, description, source
             )
