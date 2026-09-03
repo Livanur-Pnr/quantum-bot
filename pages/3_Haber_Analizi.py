@@ -1,6 +1,10 @@
 """
-📰 Haber Analizi — CryptoPanic haber akışı + Gemini AI ile Türkçe özet ve
-LONG/SHORT eğilim değerlendirmesi.
+📰 Haber Analizi — Ücretsiz kripto haber RSS akışları (Cointelegraph, Decrypt) +
+Gemini AI ile Türkçe özet ve LONG/SHORT eğilim değerlendirmesi.
+
+NOT: CryptoPanic'in ücretsiz API katmanı kaldırıldığı için (yalnızca ücretli
+Growth/Enterprise planları kaldı) haber kaynağı olarak, hiçbir API anahtarı
+gerektirmeyen resmi RSS akışları kullanılıyor.
 
 ÖNEMLİ: Bu panel bir OLASILIK değerlendirmesi sunar, kesin bir alım/satım
 sinyali değildir. Diğer botlardaki "kararlılık, aşırı kesinlik yok" felsefesi
@@ -13,6 +17,8 @@ import json
 import re
 import html
 import os
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 
@@ -25,10 +31,15 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-CRYPTOPANIC_API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 GEMINI_MODEL = "gemini-2.0-flash"
 GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+
+# Ücretsiz, anahtar gerektirmeyen resmi RSS akışları.
+RSS_FEEDS = {
+    "Cointelegraph": "https://cointelegraph.com/rss",
+    "Decrypt": "https://decrypt.co/feed",
+}
 
 PREMIUM_CSS = """
 <style>
@@ -44,7 +55,7 @@ PREMIUM_CSS = """
 st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
 
 st.title("📰 Haber Analizi")
-st.caption("CryptoPanic haber akışı → Gemini AI ile Türkçe özet ve olası LONG/SHORT eğilim değerlendirmesi.")
+st.caption("Cointelegraph & Decrypt (ücretsiz RSS) → Gemini AI ile Türkçe özet ve olası LONG/SHORT eğilim değerlendirmesi.")
 
 if "news_summary_cache" not in st.session_state:
     st.session_state.news_summary_cache = {}
@@ -52,82 +63,99 @@ if "news_summary_cache" not in st.session_state:
 # ─────────────────────────────────────────────────────────────────
 # SIDEBAR — KONTROLLER
 # ─────────────────────────────────────────────────────────────────
-FILTER_MAP = {
-    "Genel (en yeni)": None,
-    "Yükselenler (rising)": "rising",
-    "Önemli (important)": "important",
-    "Olumlu (bullish)": "bullish",
-    "Olumsuz (bearish)": "bearish",
-}
-
 with st.sidebar:
     st.markdown("## 📰 Haber Kontrolleri")
     coin_filter = st.text_input(
         "Coin filtrele (örn: BTC,ETH)",
         value="",
-        help="Boş bırakırsan genel kripto haber akışı gösterilir.",
+        help="Boş bırakırsan tüm kripto haberleri gösterilir. Başlık/özet içinde geçen coin adına göre filtrelenir.",
     )
-    news_filter_label = st.selectbox("Haber türü", list(FILTER_MAP.keys()), index=0)
     max_news = st.slider("Gösterilecek haber sayısı", min_value=3, max_value=15, value=8)
     refresh_seconds = st.slider("Otomatik yenileme (saniye)", min_value=60, max_value=600, value=180, step=30)
 
     st.markdown("---")
-    if not CRYPTOPANIC_API_KEY:
-        st.warning("⚠️ `CRYPTOPANIC_API_KEY` bulunamadı. `.env` dosyanıza ekleyin.")
+    st.caption("Haber kaynağı: " + ", ".join(RSS_FEEDS.keys()) + " (ücretsiz RSS, anahtar gerekmez)")
     if not GEMINI_API_KEY:
-        st.warning("⚠️ `GEMINI_API_KEY` bulunamadı. `.env` dosyanıza ekleyin.")
-    if CRYPTOPANIC_API_KEY and GEMINI_API_KEY:
-        st.success("✅ Her iki API anahtarı da tanımlı.")
+        st.warning("⚠️ `GEMINI_API_KEY` bulunamadı. `.env` dosyanıza ekleyin (ücretsiz: aistudio.google.com/apikey).")
+    else:
+        st.success("✅ Gemini API anahtarı tanımlı.")
 
 
 # ─────────────────────────────────────────────────────────────────
-# CRYPTOPANIC — HABER ÇEKİMİ
+# RSS — HABER ÇEKİMİ (ücretsiz, anahtarsız)
 # ─────────────────────────────────────────────────────────────────
+def _strip_html(raw: str) -> str:
+    return re.sub(r"<[^>]+>", " ", raw or "").strip()
+
+
 @st.cache_data(ttl=90, show_spinner=False)
-def fetch_cryptopanic_news(api_key: str, currencies: str, filter_key, limit: int):
-    if not api_key:
-        return [], "CRYPTOPANIC_API_KEY tanımlı değil."
+def fetch_rss_news(currencies: str, limit: int):
+    currency_list = [c.strip().upper() for c in currencies.split(",") if c.strip()] if currencies else []
+    all_items = []
+    errors = []
 
-    params = {"auth_token": api_key, "public": "true"}
-    if currencies:
-        params["currencies"] = currencies
-    if filter_key:
-        params["filter"] = filter_key
-
-    # CryptoPanic API'nin plan bazlı ("free"/"v1") uç nokta biçimleri değişebiliyor;
-    # birini deneyip başarısız olursa diğerine düşerek dayanıklılık sağlanır.
-    endpoints = [
-        "https://cryptopanic.com/api/free/v2/posts/",
-        "https://cryptopanic.com/api/v1/posts/",
-    ]
-    last_err = None
-    for url in endpoints:
+    for source_name, feed_url in RSS_FEEDS.items():
         try:
-            resp = requests.get(url, params=params, timeout=15)
-            if resp.status_code == 200:
-                data = resp.json()
-                return data.get("results", [])[:limit], None
-            last_err = f"HTTP {resp.status_code}: {resp.text[:200]}"
+            resp = requests.get(feed_url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+            root = ET.fromstring(resp.content)
+            for item in root.findall(".//item"):
+                title = (item.findtext("title") or "").strip()
+                link = (item.findtext("link") or "").strip()
+                pub_date = (item.findtext("pubDate") or "").strip()
+                description = _strip_html(item.findtext("description") or "")
+
+                if currency_list:
+                    haystack = f"{title} {description}".upper()
+                    if not any(c in haystack for c in currency_list):
+                        continue
+
+                all_items.append({
+                    "id": link or title,
+                    "title": title,
+                    "url": link,
+                    "source": source_name,
+                    "published_at": pub_date,
+                    "description": description[:600],
+                })
         except Exception as e:
-            last_err = str(e)
-    return [], f"CryptoPanic API hatası: {last_err}"
+            errors.append(f"{source_name}: {e}")
+
+    def _sort_key(it):
+        try:
+            return parsedate_to_datetime(it["published_at"])
+        except Exception:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    all_items.sort(key=_sort_key, reverse=True)
+
+    err_msg = "; ".join(errors) if errors and not all_items else None
+    return all_items[:limit], err_msg
 
 
-def format_relative_time(iso_str: str) -> str:
+def format_relative_time(date_str: str) -> str:
+    dt = None
     try:
-        dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
-        diff = datetime.now(timezone.utc) - dt
-        mins = int(diff.total_seconds() // 60)
-        if mins < 1:
-            return "az önce"
-        if mins < 60:
-            return f"{mins} dk önce"
-        hours = mins // 60
-        if hours < 24:
-            return f"{hours} sa önce"
-        return f"{hours // 24} gün önce"
+        dt = parsedate_to_datetime(date_str)
     except Exception:
+        try:
+            dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        except Exception:
+            return ""
+    if dt is None:
         return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    diff = datetime.now(timezone.utc) - dt
+    mins = int(diff.total_seconds() // 60)
+    if mins < 1:
+        return "az önce"
+    if mins < 60:
+        return f"{mins} dk önce"
+    hours = mins // 60
+    if hours < 24:
+        return f"{hours} sa önce"
+    return f"{hours // 24} gün önce"
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -137,7 +165,7 @@ def summarize_news_with_gemini(api_key: str, title: str, description: str, sourc
     prompt = f"""Aşağıda bir kripto para haberi var. Görevlerin:
 
 1. Haberin içindeki ÖNEMLİ bilgileri, haber hangi dilde olursa olsun, TÜRKÇE olarak 2-3 kısa cümlelik bir özet halinde ver.
-2. Bu haberin piyasada LONG (yükseliş) mi yoksa SHORT (düşüş) yönünde mi bir baskı yaratma ihtimalinin daha yüksek olduğunu değerlendir. Haber nötr, belirsiz veya etkisizse "NOTR" de. Bu KESİN bir tahmin değildir, sadece bir olasılık değerlendirmesidir — asla kesinlik iddia etme, emin olmadığında NOTR de.
+2. Bu haberin piyasada LONG (yükseliş) mu yoksa SHORT (düşüş) yönünde mi bir baskı yaratma ihtimalinin daha yüksek olduğunu değerlendir. Haber nötr, belirsiz veya etkisizse "NOTR" de. Bu KESİN bir tahmin değildir, sadece bir olasılık değerlendirmesidir — asla kesinlik iddia etme, emin olmadığında NOTR de.
 
 Haber Başlığı: {title}
 Haber İçeriği/Açıklaması: {description}
@@ -181,25 +209,21 @@ SADECE şu JSON formatında cevap ver, başka hiçbir açıklama ekleme:
 # ─────────────────────────────────────────────────────────────────
 @st.fragment(run_every=refresh_seconds)
 def render_news_panel():
-    currencies = coin_filter.strip().upper().replace(" ", "")
-    filter_key = FILTER_MAP[news_filter_label]
-
-    posts, err = fetch_cryptopanic_news(CRYPTOPANIC_API_KEY, currencies, filter_key, max_news)
+    posts, err = fetch_rss_news(coin_filter.strip(), max_news)
 
     if err:
         st.error(err)
-        return
     if not posts:
         st.info("Şu anda gösterilecek haber bulunamadı.")
         return
 
     for post in posts:
-        post_id = post.get("id")
-        title = post.get("title", "") or ""
-        source = ((post.get("source") or {}).get("title")) or "Bilinmeyen kaynak"
-        url = post.get("url", "") or "#"
-        published = format_relative_time(post.get("published_at", ""))
-        description = post.get("body") or post.get("description") or title
+        post_id = post["id"]
+        title = post["title"]
+        source = post["source"]
+        url = post["url"]
+        published = format_relative_time(post["published_at"])
+        description = post["description"] or title
 
         if GEMINI_API_KEY and post_id not in st.session_state.news_summary_cache:
             st.session_state.news_summary_cache[post_id] = summarize_news_with_gemini(
