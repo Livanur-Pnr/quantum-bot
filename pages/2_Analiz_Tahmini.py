@@ -29,6 +29,10 @@ import concurrent.futures
 from datetime import datetime
 import time
 from dotenv import load_dotenv
+import http.server
+import threading
+import socket
+from urllib.parse import urlparse, parse_qs
 
 try:
     from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier, VotingClassifier
@@ -450,6 +454,112 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
 
 def format_price(p): return f"{p:.4f}" if p < 10 else f"{p:.2f}"
 
+# ─────────────────────────────────────────────────────────────────
+# 3.5 CANLI GRAFIK IÇIN ARKA PLAN VERİ SUNUCUSU (FLAŞ FIX - MİMARİ DEĞİŞİKLİĞİ)
+# ─────────────────────────────────────────────────────────────────
+# ONEMLI: Arastirma sonucu kesinlesti - st.plotly_chart, @st.fragment(run_every=...) icinde
+# HER yenilemede yeniden monte ediliyor (Streamlit'in bu surumundeki framework davranisi;
+# bos/basit bir test grafigiyle bile dogrulandi, Python tarafinda figur optimizasyonuyla
+# onlenemiyor). TEK gercek cozum: grafigin DOM/JS yasam dongusunu Streamlit'in rerun
+# dongusunden TAMAMEN bagimsiz hale getirmek. Bunun icin:
+#   1. Streamlit process'i icinde, ayri bir thread'de hafif bir HTTP sunucusu calisiyor.
+#   2. Fragment (5 saniyede bir) yeni fig'i st.plotly_chart'a VERMEK yerine bu sunucuya
+#      JSON olarak "yayinliyor" (publish).
+#   3. Grafik, st.components.v1.html() ile SADECE BIR KEZ (fragment'in DISINDA, main()
+#      icinde) kuruluyor; icindeki JS kendi basina bu sunucuyu periyodik olarak (fetch) yoklayip
+#      Plotly.react() ile SADECE VERIYI guncelliyor - Streamlit bu DOM'a bir daha HIC dokunmuyor,
+#      yani remount/flas fiziksel olarak imkansiz hale geliyor.
+_CHART_DATA_HOST = "127.0.0.1"
+_CHART_DATA_PORT = 8765
+_chart_data_lock = threading.Lock()
+_chart_data_store: dict = {}
+
+
+class _ChartDataHandler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        if parsed.path == "/chart_data":
+            key = parse_qs(parsed.query).get("key", [""])[0]
+            with _chart_data_lock:
+                payload = _chart_data_store.get(key, "")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write((payload or "{}").encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass  # konsolu kirletmesin - sessiz calis
+
+
+def _port_is_free(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return True
+        except OSError:
+            return False
+
+
+@st.cache_resource(show_spinner=False)
+def _ensure_chart_data_server():
+    # ONEMLI: @st.cache_resource sayesinde bu fonksiyon TUM oturumlar/reruns boyunca process
+    # basina SADECE BIR KEZ calisir - sunucu tekrar tekrar baslatilmaya calisilmaz.
+    if not _port_is_free(_CHART_DATA_HOST, _CHART_DATA_PORT):
+        return None  # baska bir session/process zaten baslatmis olabilir - sorun degil
+    server = http.server.ThreadingHTTPServer((_CHART_DATA_HOST, _CHART_DATA_PORT), _ChartDataHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server
+
+
+def _publish_chart_figure(key: str, fig: go.Figure) -> None:
+    with _chart_data_lock:
+        _chart_data_store[key] = fig.to_json()
+
+
+def render_live_chart_component(chart_key: str, height: int = 850) -> None:
+    # ONEMLI: Bu fonksiyon fragment'in DISINDA (main() icinde, sembol/zaman dilimi degisince
+    # dogal olarak yeniden calisir) cagrilmalidir - boylece Streamlit'in donemsel (5sn) rerun'u
+    # bu bilesene HIC dokunmaz, sadece kullanici gercekten coin/zaman dilimi degistirdiginde
+    # (beklenen/istenen bir "yeniden yukleme") yeniden kurulur.
+    data_url = f"http://{_CHART_DATA_HOST}:{_CHART_DATA_PORT}/chart_data?key={chart_key}"
+    html = f"""
+    <div id="live-plotly-chart" style="width:100%; height:{height}px; background:#0b0e14;
+         display:flex; align-items:center; justify-content:center; color:#94a3b8;
+         font-family:'Inter',sans-serif; font-size:13px;">Grafik yükleniyor…</div>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <script>
+    (function() {{
+        const dataUrl = {data_url!r};
+        const el = document.getElementById('live-plotly-chart');
+        let initialized = false;
+        async function poll() {{
+            try {{
+                const resp = await fetch(dataUrl, {{cache: 'no-store'}});
+                const spec = await resp.json();
+                if (spec && spec.data && spec.data.length) {{
+                    if (!initialized) {{
+                        el.textContent = '';
+                        Plotly.newPlot(el, spec.data, spec.layout, {{displayModeBar: false, scrollZoom: true, responsive: true}});
+                        initialized = true;
+                    }} else {{
+                        Plotly.react(el, spec.data, spec.layout);
+                    }}
+                }}
+            }} catch (e) {{ /* sessizce gec, bir sonraki denemede tekrar dene */ }}
+            setTimeout(poll, 1500);
+        }}
+        poll();
+    }})();
+    </script>
+    """
+    st.components.v1.html(html, height=height + 5)
+
 def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: float, timeframe: str = "", entries_df: pd.DataFrame = None) -> go.Figure:
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], increasing_line_color="#22ab94", decreasing_line_color="#f7525f", increasing_fillcolor="#22ab94", decreasing_fillcolor="#f7525f", name="Fiyat"), row=1, col=1)
@@ -671,6 +781,17 @@ def main():
         # yerin icini dolduruyoruz.
         paper_trade_slot = st.empty()
 
+    # ONEMLI - FLAS FIX MİMARİSİ: Grafik artik fragment'in ICINDE degil, burada (main() icinde,
+    # sadece coin/zaman dilimi degisince dogal olarak yeniden calisan bolumde) TEK SEFERLIK
+    # kuruluyor. Fragment (asagida) artik grafigi DOGRUDAN cizmiyor; sadece arka plandaki hafif
+    # HTTP sunucusuna yeni veriyi "yayinliyor" (_publish_chart_figure). Grafigin kendi JS'i bu
+    # sunucuyu bagimsiz olarak yoklayip Plotly.react() ile SADECE VERIYI gunceller - Streamlit
+    # bu DOM'a bir daha hic dokunmadigi icin remount/flas fiziksel olarak imkansiz hale gelir.
+    _ensure_chart_data_server()
+    chart_key = f"{selected_exchange_id}_{symbol}_{tf}"
+    st.markdown("## 📈 Canlı Grafik")
+    render_live_chart_component(chart_key, height=850)
+
     refresh_rate = 5
     @st.fragment(run_every=refresh_rate)
     def render_classic_terminal():
@@ -789,16 +910,11 @@ def main():
 
         fig = build_realtime_chart(chart_df, ai_threshold, tp_m, sl_m, timeframe=tf, entries_df=chart_entries_df)
 
-        # ONEMLI: Grafikteki tiklama secimi (on_select) bu ortamda guvenilir dogrulanamadi ve
-        # Streamlit'in secim durumunu takip etmesi grafik bilesenini her yenilemede daha agir
-        # islem yapmaya zorluyordu. Tiklayip detay gorme ozelligi, HER ZAMAN GUVENILIR calisan
-        # asagidaki kayit defteri tablosu (st.dataframe + on_select) uzerinden saglaniyor;
-        # grafik burada sadece GORSEL olarak sinyalleri isaretliyor (hover ile detay gosterir).
-        st.plotly_chart(
-            fig, use_container_width=True, height=850,
-            config={'displayModeBar': False, 'scrollZoom': True},
-            key=f"realtime_chart_{symbol}_{tf}",
-        )
+        # ONEMLI: Grafik artik burada DOGRUDAN cizilmiyor (st.plotly_chart kaldirildi) - bunun
+        # yerine yeni veri, main() icinde bir kez kurulan bagimsiz JS bilesenin okudugu arka plan
+        # sunucusuna "yayinlaniyor". Boylece fragment'in 5 saniyelik periyodik yenilemesi grafigin
+        # DOM'unu bir daha hic etkilemiyor - flas/kapanip-acilma fiziksel olarak imkansiz olur.
+        _publish_chart_figure(chart_key, fig)
 
         # ONEMLI: Grafikteki kutucuklar cok sik oldugunda ust uste binip okunmaz hale
         # geliyordu. Bunun icin grafigin ALTINA, su ana kadar uretilen TUM giris sinyallerini
