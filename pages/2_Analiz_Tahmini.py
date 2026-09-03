@@ -550,18 +550,58 @@ def render_live_chart_component(chart_key: str, height: int = 850) -> None:
         const dataUrl = {data_url!r};
         const el = document.getElementById('live-plotly-chart');
         const loadingEl = document.getElementById('live-plotly-loading');
+        const AXES = ['xaxis', 'yaxis', 'xaxis2', 'yaxis2'];
         let initialized = false;
+        let lastPayload = null;   // ayni veri geldiginde gereksiz yeniden cizimi engeller
+        let userView = false;     // kullanici kendi zoom/pan yaptiysa onun gorunumu korunur
+
+        // Kullanici tekerlekle yakinlastirdiginda / surukleyerek kaydirdiginda Plotly
+        // "plotly_relayout" olayini eksen araliklariyla tetikler. O andan itibaren sunucudan
+        // gelen sabit araliklari UYGULAMAYIZ - aksi halde kullanicinin gorunumu her
+        // guncellemede sifirlanir (titreme/kayma sikayetinin sebebi buydu). Grafige CIFT
+        // TIKLAYINCA Plotly "autorange" gonderir; o an otomatik takip moduna geri doneriz.
+        function attachInteractionTracking() {{
+            el.on('plotly_relayout', function(ev) {{
+                if (!ev) return;
+                const keys = Object.keys(ev);
+                if (keys.some(k => k.indexOf('.range') !== -1)) userView = true;
+                if (keys.some(k => k.indexOf('.autorange') !== -1)) userView = false;
+            }});
+            el.on('plotly_doubleclick', function() {{ userView = false; }});
+        }}
+
+        function keepUserView(layout) {{
+            if (!userView || !el.layout) return layout;
+            AXES.forEach(function(ax) {{
+                const cur = el.layout[ax];
+                if (cur && cur.range && layout[ax]) {{
+                    layout[ax] = Object.assign({{}}, layout[ax], {{
+                        range: cur.range.slice(), autorange: false
+                    }});
+                }}
+            }});
+            return layout;
+        }}
+
         async function poll() {{
             try {{
                 const resp = await fetch(dataUrl, {{cache: 'no-store'}});
-                const spec = await resp.json();
-                if (spec && spec.data && spec.data.length) {{
-                    if (!initialized) {{
-                        loadingEl.style.display = 'none';
-                        Plotly.newPlot(el, spec.data, spec.layout, {{displayModeBar: false, scrollZoom: true, responsive: true}});
-                        initialized = true;
-                    }} else {{
-                        Plotly.react(el, spec.data, spec.layout);
+                const text = await resp.text();
+                // ONEMLI: Python tarafi 5 saniyede bir uretiyor, biz 1.5 saniyede bir soruyoruz -
+                // yani cogu istekte veri AYNI geliyordu ve bosuna tam yeniden cizim yapiliyordu
+                // (takilma/kasma sebebi). Veri gercekten degismediyse hicbir sey yapmiyoruz.
+                if (text && text !== lastPayload) {{
+                    const spec = JSON.parse(text);
+                    if (spec && spec.data && spec.data.length) {{
+                        lastPayload = text;
+                        if (!initialized) {{
+                            loadingEl.style.display = 'none';
+                            Plotly.newPlot(el, spec.data, spec.layout, {{displayModeBar: false, scrollZoom: true, responsive: true}});
+                            initialized = true;
+                            attachInteractionTracking();
+                        }} else {{
+                            Plotly.react(el, spec.data, keepUserView(spec.layout));
+                        }}
                     }}
                 }}
             }} catch (e) {{ /* sessizce gec, bir sonraki denemede tekrar dene */ }}
@@ -755,7 +795,9 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     fig.add_shape(type="line", x0=last_idx, y0=last['close'], x1=future_idx, y1=live_tp, line=dict(color=color, dash="dot", width=1), opacity=0.5, row=1, col=1)
     fig.add_annotation(x=future_idx, y=live_tp, text=label_text, showarrow=True, arrowhead=2, arrowcolor=color, font=dict(size=12, color=text_color), align="left", bgcolor=bg_color, bordercolor=color, borderwidth=2, borderpad=6, ax=40, ay=0, row=1, col=1)
 
-    fig.update_layout(template="plotly_dark", paper_bgcolor="#0b0e14", plot_bgcolor="#0b0e14", height=850, margin=dict(l=10, r=70, t=48, b=20), hovermode="x unified", showlegend=False, xaxis_rangeslider_visible=False)
+    # ONEMLI - AKICI ETKILESIM: dragmode="pan" ile fare ile SURUKLEYINCE grafik kayar (borsa
+    # arayuzlerindeki gibi); tekerlekle yakinlastirma (scrollZoom) JS tarafinda aciktir.
+    fig.update_layout(template="plotly_dark", paper_bgcolor="#0b0e14", plot_bgcolor="#0b0e14", height=850, margin=dict(l=10, r=70, t=48, b=20), hovermode="x unified", showlegend=False, xaxis_rangeslider_visible=False, dragmode="pan")
     fig.update_xaxes(gridcolor="#1c212d", zeroline=False, showspikes=True, spikecolor="#2a2e39", rangebreaks=[])
     fig.update_yaxes(gridcolor="#1c212d", zeroline=False, side="right")
     fig.update_yaxes(range=[0, 100], row=2, col=1)
