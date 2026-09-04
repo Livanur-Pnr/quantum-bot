@@ -8,6 +8,15 @@ st.set_page_config(page_title="Analiz Tahmini", page_icon="⚡", layout="wide", 
 # kurallar bu gecici gorsel durumlari devre disi birakiyor.
 st.markdown("""
 <style>
+    /* --- "Vivid Fintech" açık tema: sayfanın ana arkaplanı (Canlı Gösterge sayfasıyla tutarlı) --- */
+    .stApp, [data-testid="stAppViewContainer"] { background-color: #eaf6f4 !important; color: #0f2b2e; }
+    /* NOT: Bilinçli olarak SADECE Streamlit'in kendi başlık/metin elemanları hedefleniyor
+       (h1-h3, düz markdown <p>, caption) — genel div/span kuralı YAZILMIYOR çünkü bu, kart
+       bileşenlerinin (section-header-title, tp-sl-label vb.) kendi <div>/<span> renklerini
+       (daha yüksek CSS özgüllüğü nedeniyle) eziyor ve metni görünmez hale getiriyordu. */
+    [data-testid="stAppViewContainer"] h1, [data-testid="stAppViewContainer"] h2, [data-testid="stAppViewContainer"] h3,
+    [data-testid="stAppViewContainer"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stAppViewContainer"] [data-testid="stCaptionContainer"] p { color: #0f2b2e; }
     [data-testid="stHeader"] { background: transparent !important; }
     footer,
     [data-testid="stStatusWidget"], [data-testid="stAppRunningIndicator"],
