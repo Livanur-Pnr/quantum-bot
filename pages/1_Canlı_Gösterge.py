@@ -1653,22 +1653,22 @@ def render_quantum_terminal():
         svg_parts = [
             f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" preserveAspectRatio="none" style="display:block;">',
             '<defs><linearGradient id="heroFillGrad" x1="0" y1="0" x2="0" y2="1">',
-            '<stop offset="0%" stop-color="rgba(255,255,255,0.30)"/>',
-            '<stop offset="100%" stop-color="rgba(255,255,255,0.02)"/>',
+            '<stop offset="0%" stop-color="rgba(20,184,166,0.35)"/>',
+            '<stop offset="100%" stop-color="rgba(20,184,166,0.02)"/>',
             '</linearGradient></defs>',
             f'<path d="{area_path}" fill="url(#heroFillGrad)" stroke="none"/>',
-            f'<path d="{line_path}" fill="none" stroke="#f0fdfa" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>',
-            f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="9" fill="rgba(255,255,255,0.25)"/>',
-            f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="5" fill="#ffffff"/>',
+            f'<path d="{line_path}" fill="none" stroke="#0e7490" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>',
+            f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="9" fill="rgba(14,116,144,0.20)"/>',
+            f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="5" fill="#0e7490"/>',
             '</svg>',
         ]
         return "".join(svg_parts)
 
     # Üst Bilgi Rozeti (Seçili Coin / Zaman Dilimi / Kaldıraç / Bütçe)
     st.markdown(f"""
-    <div style="background:#0b1120; padding:10px 16px; border-radius:8px; border:1px solid #1e293b; margin-bottom:12px;">
-        <span style="font-size: 20px; font-weight: 800; color: #38bdf8;">🟢 {selected_exchange_label}: {symbol_str}</span>
-        <span style="color: #94a3b8; font-size: 13px; margin-left: 10px;">| {selected_tf_label} | <b style="color:#f59e0b;">{selected_leverage}x Kaldıraç</b> | <b style="color:#10b981;">Bütçe: ${margin_budget:,.0f}</b></span>
+    <div style="background:#ffffff; padding:10px 16px; border-radius:14px; box-shadow:0 4px 14px rgba(15,43,46,0.06); margin-bottom:12px;">
+        <span style="font-size: 20px; font-weight: 800; color: #0f2b2e;">🟢 {selected_exchange_label}: {symbol_str}</span>
+        <span style="color: #5f7d7a; font-size: 13px; margin-left: 10px;">| {selected_tf_label} | <b style="color:#d97706;">{selected_leverage}x Kaldıraç</b> | <b style="color:#16a34a;">Bütçe: ${margin_budget:,.0f}</b></span>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1679,7 +1679,7 @@ def render_quantum_terminal():
         # --- "VIVID FINTECH" HERO BÖLÜMÜ (Stitch referans tasarımına göre) ---
         st.markdown("""
         <style>
-            .hero-chart-card { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:0 0 20px 20px; padding:14px 22px 20px 22px; color:#ffffff; height:100%; margin-top:-8px; }
+            .hero-chart-card { background:#ffffff; border-radius:0 0 20px 20px; padding:14px 22px 20px 22px; color:#0f2b2e; height:100%; margin-top:-8px; box-shadow:0 4px 14px rgba(15,43,46,0.06); }
             .st-key-tf_pill_bar { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:20px 20px 0 0; padding:12px 16px 6px 16px; }
             .st-key-tf_pill_bar [data-testid="stButton"] button { width:100%; border:none !important; border-radius:16px !important; font-size:11px !important; font-weight:800 !important; padding:4px 0 !important; min-height:32px !important; box-shadow:none !important; }
             .st-key-tf_pill_bar [data-testid="stBaseButton-secondary"] { background:rgba(255,255,255,0.15) !important; color:#e0fbfc !important; }
@@ -1689,21 +1689,24 @@ def render_quantum_terminal():
             .st-key-tf_pill_bar.st-key-tf_pill_bar [data-testid="stBaseButton-primary"] p,
             .st-key-tf_pill_bar.st-key-tf_pill_bar button[kind="primary"] p { color:#0e7490 !important; }
             .hero-price-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:4px; }
-            .hero-price { font-size:30px; font-weight:900; }
-            .hero-chg-badge { background:rgba(255,255,255,0.25); padding:4px 12px; border-radius:20px; font-size:12px; font-weight:800; }
-            .hero-tf-pill { display:inline-block; background:rgba(255,255,255,0.15); color:#e0fbfc; padding:4px 13px; border-radius:16px; font-size:11px; font-weight:800; margin:12px 6px 0 0; }
-            .hero-tf-pill.active { background:#ffffff; color:#0e7490; }
+            .hero-price { font-size:30px; font-weight:900; color:#0f2b2e; }
+            .hero-chg-badge { padding:4px 12px; border-radius:20px; font-size:12px; font-weight:800; }
+            .hero-chg-badge.up { background:#dcfce7; color:#16a34a; }
+            .hero-chg-badge.down { background:#fee2e2; color:#dc2626; }
+            .hero-tf-pill { display:inline-block; background:#f1f5f9; color:#5f7d7a; padding:4px 13px; border-radius:16px; font-size:11px; font-weight:800; margin:12px 6px 0 0; }
+            .hero-tf-pill.active { background:#0e7490; color:#ffffff; }
 
-            .ai-signal-card { border-radius:20px; padding:20px; color:#ffffff; text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center; }
-            .ai-signal-card.dir-long { background:linear-gradient(135deg, #22c55e 0%, #15803d 100%); }
-            .ai-signal-card.dir-short { background:linear-gradient(135deg, #fb7185 0%, #f97316 100%); }
-            .ai-signal-card.dir-neutral { background:linear-gradient(135deg, #64748b 0%, #334155 100%); }
-            .ai-signal-label { font-size:11px; letter-spacing:1.5px; opacity:0.85; font-weight:800; }
-            .ai-signal-title { font-size:22px; font-weight:900; margin:6px 0 16px 0; }
-            .confidence-inner { width:100px; height:100px; border-radius:50%; background:rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; justify-content:center; margin:0 auto; }
-            .confidence-value { font-size:23px; font-weight:900; }
-            .confidence-label { font-size:9px; letter-spacing:1px; opacity:0.85; margin-top:2px; }
-            .ai-prob-line { font-size:12px; margin-top:14px; opacity:0.9; }
+            .ai-signal-card { background:#ffffff; border-radius:20px; padding:20px; text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center; box-shadow:0 4px 14px rgba(15,43,46,0.06); }
+            .ai-signal-card.dir-long .ai-signal-title { color:#16a34a; }
+            .ai-signal-card.dir-short .ai-signal-title { color:#dc2626; }
+            .ai-signal-card.dir-neutral .ai-signal-title { color:#7c3aed; }
+            .ai-signal-label { font-size:11px; letter-spacing:1.5px; color:#5f7d7a; font-weight:800; }
+            .ai-signal-title { font-size:20px; font-weight:900; margin:6px 0 16px 0; }
+            .confidence-ring { width:112px; height:112px; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; }
+            .confidence-inner { width:88px; height:88px; border-radius:50%; background:#ffffff; display:flex; flex-direction:column; align-items:center; justify-content:center; box-shadow:inset 0 0 0 1px rgba(15,43,46,0.06); }
+            .confidence-value { font-size:22px; font-weight:900; color:#0f2b2e; }
+            .confidence-label { font-size:9px; letter-spacing:1px; color:#5f7d7a; margin-top:2px; }
+            .ai-prob-line { font-size:12px; margin-top:14px; color:#5f7d7a; }
 
             .stat-card { background:#ffffff; border-radius:18px; padding:15px 16px; height:100%; }
             .stat-icon { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; margin-bottom:10px; color:#fff; }
@@ -1753,21 +1756,43 @@ def render_quantum_terminal():
             .indicator-chip-title { font-size:9px; color:#6b7280; font-weight:800; text-transform:uppercase; letter-spacing:0.2px; }
             .indicator-chip-value { font-size:13px; font-weight:900; margin-top:5px; }
             .indicator-chip-dir { font-size:10px; font-weight:800; margin-top:3px; }
+
+            .st-key-coin_tab_strip { background:#ffffff; border-radius:16px; padding:8px 4px; height:100%; box-shadow:0 4px 14px rgba(15,43,46,0.06); }
+            .st-key-coin_tab_strip [data-testid="stVerticalBlock"] { gap:6px; }
+            .st-key-coin_tab_strip [data-testid="stButton"] button {
+                writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg);
+                width:100%; min-height:88px; border:none !important; border-radius:10px !important;
+                font-size:10px !important; font-weight:800 !important; letter-spacing:0.5px;
+                box-shadow:none !important; padding:8px 0 !important;
+            }
+            .st-key-coin_tab_strip [data-testid="stBaseButton-secondary"] { background:#f1f5f9 !important; color:#5f7d7a !important; }
+            .st-key-coin_tab_strip.st-key-coin_tab_strip [data-testid="stBaseButton-primary"] { background:#0e7490 !important; color:#ffffff !important; }
+            .st-key-coin_tab_strip.st-key-coin_tab_strip [data-testid="stBaseButton-primary"] p { color:#ffffff !important; }
         </style>
         """, unsafe_allow_html=True)
 
-        # 1) HERO GRAFİK KARTI + AI SİNYAL KARTI
-        hero_col, signal_col = st.columns([1.5, 1])
+        # 1) DİKEY FAVORİ COİN SEKMELERİ + HERO GRAFİK KARTI + AI SİNYAL KARTI
+        coin_tab_col, hero_col, signal_col = st.columns([0.16, 1.5, 1])
+
+        with coin_tab_col:
+            with st.container(key="coin_tab_strip"):
+                _fav_tabs = [("BTC/USDT", "BTCUSDT"), ("ETH/USDT", "ETHUSDT"), ("SOL/USDT", "SOLUSDT"), ("1000PEPE/USDT", "1000PEPEUSDT")]
+                for _tab_label, _tab_sym in _fav_tabs:
+                    _tab_active = st.session_state.get("active_symbol_query") == _tab_sym
+                    if st.button(_tab_label, key=f"coin_tab_{_tab_sym}", type="primary" if _tab_active else "secondary"):
+                        st.session_state["active_symbol_query"] = _tab_sym
+                        st.rerun(scope="app")
 
         with hero_col:
-            chg_badge_icon = "▲" if change_24h >= 0 else "▼"
+            chg_up = change_24h >= 0
+            chg_badge_icon = "▲" if chg_up else "▼"
             sparkline_svg = _build_hero_sparkline_svg(df_raw['close'].tail(120).tolist())
             st.markdown(f"""
             <div class="hero-chart-card">
-                <div style="font-size:11px; letter-spacing:1px; opacity:0.85; font-weight:700;">ANLIK CANLI FİYAT</div>
+                <div style="font-size:11px; letter-spacing:1px; color:#5f7d7a; font-weight:700;">ANLIK CANLI FİYAT</div>
                 <div class="hero-price-row">
                     <span class="hero-price">{fmt(current_price)}</span>
-                    <span class="hero-chg-badge">{chg_badge_icon} %{change_24h:+.2f} (24s)</span>
+                    <span class="hero-chg-badge {'up' if chg_up else 'down'}">{chg_badge_icon} %{change_24h:+.2f} (24s)</span>
                 </div>
                 {sparkline_svg}
             </div>
@@ -1776,21 +1801,25 @@ def render_quantum_terminal():
         with signal_col:
             final_sig = confluence["final_signal"]
             if "LONG" in final_sig:
-                dir_cls, dir_arrow = "dir-long", "↑"
+                dir_cls, dir_arrow, ring_grad = "dir-long", "↑", "conic-gradient(#14b8a6, #16a34a {p}%, #e5e7eb 0)"
             elif "SHORT" in final_sig:
-                dir_cls, dir_arrow = "dir-short", "↓"
+                dir_cls, dir_arrow, ring_grad = "dir-short", "↓", "conic-gradient(#fb923c, #dc2626 {p}%, #e5e7eb 0)"
             else:
-                dir_cls, dir_arrow = "dir-neutral", "—"
+                dir_cls, dir_arrow, ring_grad = "dir-neutral", "—", "conic-gradient(#14b8a6, #7c3aed {p}%, #e5e7eb 0)"
 
+            conf_pct = confluence['confidence']
+            ring_style = ring_grad.format(p=conf_pct)
             st.markdown(f"""
             <div class="ai-signal-card {dir_cls}">
                 <div class="ai-signal-label">AI İŞLEM SİNYALİ</div>
                 <div class="ai-signal-title">{confluence['signal_title']} {dir_arrow}</div>
-                <div class="confidence-inner">
-                    <div class="confidence-value">%{confluence['confidence']:.0f}</div>
-                    <div class="confidence-label">GÜVEN</div>
+                <div class="confidence-ring" style="background:{ring_style};">
+                    <div class="confidence-inner">
+                        <div class="confidence-value">%{conf_pct:.0f}</div>
+                        <div class="confidence-label">GÜVEN</div>
+                    </div>
                 </div>
-                <div class="ai-prob-line">LONG: %{ai_result['prob_long']*100:.1f} &nbsp;|&nbsp; SHORT: %{ai_result['prob_short']*100:.1f}</div>
+                <div class="ai-prob-line">LONG: <b style="color:#16a34a;">%{ai_result['prob_long']*100:.1f}</b> &nbsp;|&nbsp; SHORT: <b style="color:#dc2626;">%{ai_result['prob_short']*100:.1f}</b></div>
             </div>
             """, unsafe_allow_html=True)
 
