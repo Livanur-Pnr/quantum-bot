@@ -1911,12 +1911,23 @@ def render_quantum_terminal():
             </div>
             """, unsafe_allow_html=True)
 
-        st.markdown(f"""
-        <div style="display:flex; justify-content:space-between; margin-top:12px; padding:10px 16px; border-radius:14px; background:#ffffff; box-shadow:0 4px 14px rgba(15,43,46,0.06); font-size:12px; color:#5f7d7a; flex-wrap:wrap; gap:8px;">
-            <span>📍 Giriş Fiyatı: <b style="color:#0f2b2e;">{fmt(risk['entry'])}</b></span>
-            <span>💰 Pozisyon: <b style="color:#0f2b2e;">${total_pos_size:,.0f}</b> ({selected_leverage}x, Marjin ${margin_budget:,.0f})</span>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+        entry_col, pos_col = st.columns(2)
+        with entry_col:
+            st.markdown(f"""
+            <div class="info-tile" style="border-left-color:#0e7490;">
+                <div class="info-tile-label">📍 Giriş Fiyatı</div>
+                <div class="info-tile-value">{fmt(risk['entry'])}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with pos_col:
+            st.markdown(f"""
+            <div class="info-tile" style="border-left-color:#d97706;">
+                <div class="info-tile-label">💰 Pozisyon</div>
+                <div class="info-tile-value">${total_pos_size:,.0f}</div>
+                <div class="info-tile-sub">{selected_leverage}x Kaldıraç, Marjin ${margin_budget:,.0f}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
         # --- UZUN VADELİ MAJÖR DESTEK VE DİRENÇ YAPISAL ANALİZ KARTI ---
         st.markdown(f"""
