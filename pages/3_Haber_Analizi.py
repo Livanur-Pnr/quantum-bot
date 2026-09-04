@@ -44,17 +44,52 @@ RSS_FEEDS = {
 PREMIUM_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
-    .stApp { background-color: #0b0e14; color: #d1d4dc; font-family: 'Inter', sans-serif; }
-    section[data-testid="stSidebar"] { background-color: #131722; border-right: 1px solid #2a2e39; }
+    .stApp, [data-testid="stAppViewContainer"] { background-color: #eaf6f4 !important; color: #0f2b2e; font-family: 'Inter', sans-serif; }
+    section[data-testid="stSidebar"] { background-color: #eaf6f4 !important; border-right: 1px solid rgba(15,43,46,0.08); }
     [data-testid="stHeader"] { background: transparent !important; }
     footer, [data-testid="stStatusWidget"], [data-testid="stAppRunningIndicator"],
     [data-testid="stDecoration"], #stDecoration,
     [data-testid="stAppDeployButton"], .stDeployButton { display: none !important; }
+
+    [data-testid="stAppViewContainer"] h1, [data-testid="stAppViewContainer"] h2, [data-testid="stAppViewContainer"] h3,
+    [data-testid="stAppViewContainer"] [data-testid="stMarkdownContainer"] p,
+    [data-testid="stAppViewContainer"] [data-testid="stCaptionContainer"] p { color: #0f2b2e; }
+
+    /* --- Nav pilleri (diğer sayfalarla tutarlı) --- */
+    [data-testid="stSidebarNavLink"] { border-radius:999px !important; margin-bottom:6px !important; }
+    [data-testid="stSidebarNavLink"] p, [data-testid="stSidebarNavLink"] span { color:#0f2b2e !important; }
+    [data-testid="stSidebarNavLink"]:not([aria-current="page"]) { background:#ffffff !important; }
+    [data-testid="stSidebarNavLink"][aria-current="page"] { background:linear-gradient(135deg, #2dd4bf, #14b8a6) !important; }
+    [data-testid="stSidebarNavLink"][aria-current="page"] p, [data-testid="stSidebarNavLink"][aria-current="page"] span { color:#ffffff !important; }
+
+    /* --- Sidebar kartı & form alanları --- */
+    .sb-section-title { font-size:16px; font-weight:900; color:#0f2b2e; margin:14px 0 10px 0; }
+    [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div {
+        background:#ffffff !important; border-radius:12px !important; border:1.5px solid rgba(15,43,46,0.12) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input:focus { border-color:#14b8a6 !important; }
+    [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div:focus-within { border-color:#14b8a6 !important; box-shadow:0 0 0 2px rgba(20,184,166,0.15) !important; }
+    [data-testid="stSidebar"] [data-testid="stSliderTickBarMin"], [data-testid="stSidebar"] [data-testid="stSliderTickBarMax"] { color:#5f7d7a !important; }
+    [data-testid="stSidebar"] [data-baseweb="slider"] [role="slider"] { background-color:#0e7490 !important; }
+    [data-testid="stSidebar"] [data-baseweb="slider"] div[style*="background-color: rgb(255, 75, 75)"] { background:#14b8a6 !important; }
+
+    .gemini-status-pill { display:flex; align-items:center; justify-content:center; gap:8px; padding:10px 16px; border-radius:999px; font-size:13px; font-weight:800; margin-top:14px; }
+    .gemini-status-pill.ok { background:linear-gradient(135deg, #14b8a6, #0e7490); color:#ffffff; }
+    .gemini-status-pill.missing { background:#fff7ed; border:1px solid #fdba74; color:#9a3412; }
+
+    .news-header-bar { background:linear-gradient(90deg, #14b8a6 0%, #f97316 100%); border-radius:20px; padding:18px 24px; margin-bottom:6px; display:flex; align-items:center; gap:14px; }
+    .news-header-icon { background:rgba(255,255,255,0.28); width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+    .news-header-title { font-size:30px; font-weight:900; color:#0f2b2e; margin:0; }
 </style>
 """
 st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
 
-st.title("📰 Haber Analizi")
+st.markdown("""
+<div class="news-header-bar">
+    <div class="news-header-icon">📰</div>
+    <div class="news-header-title">Haber Analizi</div>
+</div>
+""", unsafe_allow_html=True)
 st.caption("Cointelegraph & Decrypt (ücretsiz RSS) → Gemini AI ile Türkçe özet ve olası LONG/SHORT eğilim değerlendirmesi.")
 
 if "news_summary_cache" not in st.session_state:
@@ -64,21 +99,22 @@ if "news_summary_cache" not in st.session_state:
 # SIDEBAR — KONTROLLER
 # ─────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 📰 Haber Kontrolleri")
+    st.markdown("<div class='sb-section-title'>Haber Kontrolleri</div>", unsafe_allow_html=True)
     coin_filter = st.text_input(
         "Coin filtrele (örn: BTC,ETH)",
         value="",
+        placeholder="Örn: BTC, ETH",
         help="Boş bırakırsan tüm kripto haberleri gösterilir. Başlık/özet içinde geçen coin adına göre filtrelenir.",
     )
     max_news = st.slider("Gösterilecek haber sayısı", min_value=3, max_value=15, value=8)
     refresh_seconds = st.slider("Otomatik yenileme (saniye)", min_value=60, max_value=600, value=180, step=30)
 
     st.markdown("---")
-    st.caption("Haber kaynağı: " + ", ".join(RSS_FEEDS.keys()) + " (ücretsiz RSS, anahtar gerekmez)")
+    st.caption("Haber kaynağı: " + ", ".join(RSS_FEEDS.keys()))
     if not GEMINI_API_KEY:
-        st.warning("⚠️ `GEMINI_API_KEY` bulunamadı. `.env` dosyanıza ekleyin (ücretsiz: aistudio.google.com/apikey).")
+        st.markdown("<div class='gemini-status-pill missing'>⚠️ Gemini API anahtarı eksik</div>", unsafe_allow_html=True)
     else:
-        st.success("✅ Gemini API anahtarı tanımlı.")
+        st.markdown("<div class='gemini-status-pill ok'>✅ Gemini API</div>", unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -238,7 +274,8 @@ def render_news_panel():
             "gerekce": "",
         }
 
-        badge_color = {"LONG": "#22c55e", "SHORT": "#ef4444", "NOTR": "#787b86"}[summary["yon"]]
+        badge_color = {"LONG": "#16a34a", "SHORT": "#dc2626", "NOTR": "#5f7d7a"}[summary["yon"]]
+        badge_bg = {"LONG": "#dcfce7", "SHORT": "#fee2e2", "NOTR": "#f1f5f9"}[summary["yon"]]
         badge_text = {
             "LONG": "LONG EĞİLİMİ OLASI",
             "SHORT": "SHORT EĞİLİMİ OLASI",
@@ -253,17 +290,17 @@ def render_news_panel():
         safe_url = url if url.startswith(("http://", "https://")) else "#"
 
         st.markdown(f"""
-        <div style="background:#131722;border:1px solid #2a2e39;border-left:4px solid {badge_color};
-                    border-radius:8px;padding:14px 16px;margin-bottom:12px;">
+        <div style="background:#ffffff;border-left:4px solid {badge_color};box-shadow:0 4px 14px rgba(15,43,46,0.06);
+                    border-radius:14px;padding:14px 16px;margin-bottom:12px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
-            <span style="color:#787b86;font-size:0.75rem;">{safe_source} · {safe_published}</span>
-            <span style="background:{badge_color}22;color:{badge_color};padding:2px 10px;border-radius:12px;
+            <span style="color:#5f7d7a;font-size:0.75rem;">{safe_source} · {safe_published}</span>
+            <span style="background:{badge_bg};color:{badge_color};padding:2px 10px;border-radius:12px;
                          font-size:0.7rem;font-weight:800;">{badge_text}</span>
           </div>
           <a href="{safe_url}" target="_blank" rel="noopener noreferrer"
-             style="color:#d1d4dc;font-weight:700;font-size:0.95rem;text-decoration:none;">{safe_title}</a>
-          <p style="color:#b2b5be;font-size:0.85rem;margin-top:8px;margin-bottom:4px;">{safe_summary}</p>
-          <p style="color:#787b86;font-size:0.75rem;font-style:italic;margin:0;">
+             style="color:#0f2b2e;font-weight:700;font-size:0.95rem;text-decoration:none;">{safe_title}</a>
+          <p style="color:#334155;font-size:0.85rem;margin-top:8px;margin-bottom:4px;">{safe_summary}</p>
+          <p style="color:#5f7d7a;font-size:0.75rem;font-style:italic;margin:0;">
             Gerekçe: {safe_gerekce} — bu kesin bir tahmin değildir, olasılık değerlendirmesidir.
           </p>
         </div>

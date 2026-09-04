@@ -4,3 +4,14 @@
 # yeniden calistirmalari ve izleme yukunu azaltir.
 [server]
 folderWatchBlacklist = [".git", "scratch", ".vs", "__pycache__", "venv", "env"]
+
+# "Vivid Fintech" acik tema - sayfalardaki ozel CSS'lerle tutarli olsun diye Streamlit'in
+# varsayilan aksan rengi (kirmizi #ff4b4b) yerine teal kullaniliyor. Bu, slider dolgu
+# rengi gibi CSS ile hedeflenemeyen (calisma zamaninda hesaplanan gradient) elemanlari da
+# otomatik olarak dogru renkte gosterir.
+[theme]
+base = "light"
+primaryColor = "#14b8a6"
+backgroundColor = "#eaf6f4"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#0f2b2e"
