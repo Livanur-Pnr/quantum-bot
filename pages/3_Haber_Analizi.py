@@ -69,7 +69,7 @@ PREMIUM_CSS = """
     .st-key-haber_kontrol_card [data-testid="stTextInput"] > div > div {
         background:#f1f5f9 !important; border-radius:999px !important; border:1.5px solid transparent !important;
     }
-    .st-key-haber_kontrol_card [data-testid="stTextInput"] input { color:#0f2b2e !important; font-weight:700 !important; font-size:14px !important; }
+    .st-key-haber_kontrol_card [data-testid="stTextInput"] input { color:#0f2b2e !important; font-weight:900 !important; font-size:16px !important; }
     .st-key-haber_kontrol_card [data-testid="stTextInput"] input::placeholder { font-weight:500 !important; color:#5f7d7a !important; }
     .st-key-haber_kontrol_card [data-testid="stTextInput"] input:focus { border-color:#14b8a6 !important; }
     .st-key-haber_kontrol_card [data-testid="stTextInput"] > div > div:focus-within { border-color:#14b8a6 !important; background:#ffffff !important; box-shadow:0 0 0 2px rgba(20,184,166,0.15) !important; }
