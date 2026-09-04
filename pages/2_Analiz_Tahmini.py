@@ -75,6 +75,11 @@ PREMIUM_CSS = """
 
     .green { color: #16a34a; } .red { color: #dc2626; } .blue { color: #0e7490; } .white { color: #0f2b2e; }
 
+    /* --- Sayfa başlık kartı (Haber Analizi ile aynı çerçeveli tasarım) --- */
+    .page-header-bar { background:#ffffff; border:6px solid #14b8a6; border-radius:20px; padding:18px 24px; margin:6px 0 12px 0; display:flex; align-items:center; gap:14px; }
+    .page-header-icon { background:#ffffff; border:3px solid #14b8a6; color:#14b8a6; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+    .page-header-title { font-size:30px; font-weight:900; color:#14b8a6; margin:0; }
+
     /* --- Sidebar: teal/turuncu gradyanlı "Vivid Fintech" teması (Analiz Tahmini sayfasıyla tutarlı) --- */
     [data-testid="stSidebarNavLink"] { border-radius:999px !important; margin-bottom:6px !important; }
     [data-testid="stSidebarNavLink"] p, [data-testid="stSidebarNavLink"] span { color:#0f2b2e !important; }
@@ -912,7 +917,12 @@ def main():
     # bu DOM'a bir daha hic dokunmadigi icin remount/flas fiziksel olarak imkansiz hale gelir.
     _ensure_chart_data_server()
     chart_key = f"{selected_exchange_id}_{symbol}_{tf}"
-    st.markdown("## 📈 Canlı Grafik")
+    st.markdown("""
+    <div class="page-header-bar">
+        <div class="page-header-icon">📈</div>
+        <div class="page-header-title">Canlı Grafik</div>
+    </div>
+    """, unsafe_allow_html=True)
     render_live_chart_component(chart_key, height=850)
 
     refresh_rate = 5

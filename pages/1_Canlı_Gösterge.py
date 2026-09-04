@@ -32,6 +32,11 @@ st.markdown("""
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
     }
+
+    /* --- Sayfa başlık kartı (Haber Analizi ile aynı çerçeveli tasarım) --- */
+    .page-header-bar { background:#ffffff; border:6px solid #14b8a6; border-radius:20px; padding:18px 24px; margin:6px 0 6px 0; display:flex; align-items:center; gap:14px; }
+    .page-header-icon { background:#ffffff; border:3px solid #14b8a6; color:#14b8a6; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+    .page-header-title { font-size:30px; font-weight:900; color:#14b8a6; margin:0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1506,7 +1511,12 @@ with st.sidebar:
 
 
 # --- 7. BAŞLIK VE DURUM KARTI ---
-st.title("⚡ Analiz Tahmini")
+st.markdown("""
+<div class="page-header-bar">
+    <div class="page-header-icon">⚡</div>
+    <div class="page-header-title">Analiz Tahmini</div>
+</div>
+""", unsafe_allow_html=True)
 
 # Entegre Coin ve Canlı Yapay Zeka Analiz Durumu Kartı
 st.markdown(f"""
