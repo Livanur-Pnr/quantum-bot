@@ -1553,7 +1553,48 @@ def render_quantum_terminal():
     # Fiyat Formatlama Yardımcısı
     def fmt(p):
         return f"${p:,.6f}" if p < 1 else f"${p:,.4f}" if p < 100 else f"${p:,.2f}"
-        
+
+    # Hero kart içindeki mini fiyat grafiğini SAF SVG olarak üretir. Bilinçli olarak
+    # st.plotly_chart KULLANILMIYOR: bu fonksiyon @st.fragment(run_every=...) içinde
+    # çalışıyor ve Streamlit'in bu sürümünde plotly bileşenleri her fragment
+    # yenilemesinde yeniden mount olup göz batan bir "flash" a sebep oluyor (2. sayfada
+    # aynı sorunu tam da bu yüzden ayrı bir HTML/JS mimarisiyle çözmüştük). Düz SVG,
+    # aynı st.markdown bloğunun bir parçası olduğu için bu sorunu hiç yaşamıyor.
+    def _build_hero_sparkline_svg(prices, width=640, height=170):
+        prices = [float(p) for p in prices if pd.notna(p)]
+        n = len(prices)
+        if n < 2:
+            return ""
+        p_min, p_max = min(prices), max(prices)
+        p_range = max(p_max - p_min, 1e-9)
+        pad = 14
+        usable_h = height - pad * 2
+        pts = []
+        for i, p in enumerate(prices):
+            x = (i / (n - 1)) * width
+            y = pad + (1 - (p - p_min) / p_range) * usable_h
+            pts.append((x, y))
+        line_path = "M " + " L ".join(f"{x:.2f},{y:.2f}" for x, y in pts)
+        area_path = line_path + f" L {width:.2f},{height:.2f} L 0,{height:.2f} Z"
+        last_x, last_y = pts[-1]
+        # NOT: SVG kasıtlı olarak TEK SATIRDA döndürülüyor. Çok satırlı/girintili bir
+        # string, dışarıdaki st.markdown bloğuna eklendiğinde CommonMark'ın HTML blok
+        # ayrıştırıcısını kandırıp (boşluk satırı = HTML bloğunun sonu kuralı) ondan
+        # sonraki gerçek HTML'in düz metin olarak kaçırılmasına (escape) sebep oluyordu.
+        svg_parts = [
+            f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" preserveAspectRatio="none" style="display:block;">',
+            '<defs><linearGradient id="heroFillGrad" x1="0" y1="0" x2="0" y2="1">',
+            '<stop offset="0%" stop-color="rgba(255,255,255,0.30)"/>',
+            '<stop offset="100%" stop-color="rgba(255,255,255,0.02)"/>',
+            '</linearGradient></defs>',
+            f'<path d="{area_path}" fill="url(#heroFillGrad)" stroke="none"/>',
+            f'<path d="{line_path}" fill="none" stroke="#f0fdfa" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>',
+            f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="9" fill="rgba(255,255,255,0.25)"/>',
+            f'<circle cx="{last_x:.2f}" cy="{last_y:.2f}" r="5" fill="#ffffff"/>',
+            '</svg>',
+        ]
+        return "".join(svg_parts)
+
     # Üst Bilgi Rozeti (Seçili Coin / Zaman Dilimi / Kaldıraç / Bütçe)
     st.markdown(f"""
     <div style="background:#0b1120; padding:10px 16px; border-radius:8px; border:1px solid #1e293b; margin-bottom:12px;">
@@ -1566,173 +1607,207 @@ def render_quantum_terminal():
     # KANTİTATİF ANALİZ VE İNDİKATÖR RADARI
     # =========================================================================
     with st.container():
-        # --- ÜST METRİK ŞERİDİ ---
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-        with m1:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            st.markdown("<div class='sub-label'>💰 Anlık Canlı Fiyat</div>", unsafe_allow_html=True)
-            st.markdown(f"<div class='price-display'>{fmt(current_price)}</div>", unsafe_allow_html=True)
-            chg_cls = "val-positive" if change_24h >= 0 else "val-negative"
-            st.markdown(f"<div class='{chg_cls}'>24s Değişim: %{change_24h:+.2f}</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        with m2:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            st.markdown("<div class='sub-label'> 24s En Yüksek / Düşük</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size: 15px; font-weight: bold; color: #10b981;'>Y: {fmt(high_24h)}</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size: 15px; font-weight: bold; color: #ef4444;'>D: {fmt(low_24h)}</div>", unsafe_allow_html=True)
-            st.markdown("<div style='color: #64748b; font-size: 11px; margin-top: 2px;'>Aralık Derinliği</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        with m3:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            st.markdown("<div class='sub-label'>⚡ Fonlama & Piyasa Eğilimi</div>", unsafe_allow_html=True)
-            fund_color = "val-negative" if funding_rate > 0.02 else ("val-positive" if funding_rate < -0.01 else "val-neutral")
-            st.markdown(f"<div style='font-size: 18px; font-weight: bold;' class='{fund_color}'>%{funding_rate:.4f}</div>", unsafe_allow_html=True)
-            fund_note = "Uzun Ağırlıkta" if funding_rate > 0 else "Kısa Ağırlıkta"
-            st.markdown(f"<div style='color: #94a3b8; font-size: 11px;'>{fund_note}</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        with m4:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            st.markdown("<div class='sub-label'>⚖️ Tahta Alıcı/Satıcı Baskısı</div>", unsafe_allow_html=True)
-            b_ratio = depth.get("bid_ratio", 50)
-            a_ratio = depth.get("ask_ratio", 50)
-            st.markdown(f"<div style='font-size: 16px; font-weight: bold;'><span style='color:#10b981;'>%{b_ratio:.0f}</span> / <span style='color:#ef4444;'>%{a_ratio:.0f}</span></div>", unsafe_allow_html=True)
-            st.progress(b_ratio / 100.0)
-            st.markdown(f"<div style='color: #94a3b8; font-size: 11px;'>{depth.get('bias', 'DENGELİ')}</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        with m5:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            st.markdown(f"<div class='sub-label'>🌐 Dolar Dominansı (USDT.D)</div>", unsafe_allow_html=True)
-            u_val_fmt = f"%{usdt_dom['usdt_d']:.3f}"
-            u_chg_val = usdt_dom['usdt_d_change']
-            u_dir_badge = "<span style='color:#10b981; font-weight:bold; font-size:12px;'>🟢 LONG YÖNLÜ (▼ Kripto Boğa)</span>" if u_chg_val < 0 else "<span style='color:#ef4444; font-weight:bold; font-size:12px;'>🔻 SHORT YÖNLÜ (▲ Nakite Kaçış)</span>"
-            st.markdown(f"<div style='font-size: 18px; font-weight: bold; color: {'#10b981' if u_chg_val < 0 else '#ef4444'};'>{u_val_fmt}</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='margin-top:2px;'>{u_dir_badge}</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+        # --- "VIVID FINTECH" HERO BÖLÜMÜ (Stitch referans tasarımına göre) ---
+        st.markdown("""
+        <style>
+            .hero-chart-card { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:20px; padding:20px 22px; color:#ffffff; height:100%; }
+            .hero-price-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:4px; }
+            .hero-price { font-size:30px; font-weight:900; }
+            .hero-chg-badge { background:rgba(255,255,255,0.25); padding:4px 12px; border-radius:20px; font-size:12px; font-weight:800; }
+            .hero-tf-pill { display:inline-block; background:rgba(255,255,255,0.15); color:#e0fbfc; padding:4px 13px; border-radius:16px; font-size:11px; font-weight:800; margin:12px 6px 0 0; }
+            .hero-tf-pill.active { background:#ffffff; color:#0e7490; }
 
-        with m6:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            st.markdown(f"<div class='sub-label'>⚡ İşlem Gücü Katsayısı</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size: 16px; font-weight: bold; color: {risk['power_color']};'>{risk['power_title']}</div>", unsafe_allow_html=True)
-            st.markdown(f"<div style='color: #94a3b8; font-size: 11px; margin-top: 2px;'>Güç Skoru: %{risk['trade_power']:.1f}</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+            .ai-signal-card { border-radius:20px; padding:20px; color:#ffffff; text-align:center; height:100%; display:flex; flex-direction:column; justify-content:center; }
+            .ai-signal-card.dir-long { background:linear-gradient(135deg, #22c55e 0%, #15803d 100%); }
+            .ai-signal-card.dir-short { background:linear-gradient(135deg, #fb7185 0%, #f97316 100%); }
+            .ai-signal-card.dir-neutral { background:linear-gradient(135deg, #64748b 0%, #334155 100%); }
+            .ai-signal-label { font-size:11px; letter-spacing:1.5px; opacity:0.85; font-weight:800; }
+            .ai-signal-title { font-size:22px; font-weight:900; margin:6px 0 16px 0; }
+            .confidence-inner { width:100px; height:100px; border-radius:50%; background:rgba(0,0,0,0.18); display:flex; flex-direction:column; align-items:center; justify-content:center; margin:0 auto; }
+            .confidence-value { font-size:23px; font-weight:900; }
+            .confidence-label { font-size:9px; letter-spacing:1px; opacity:0.85; margin-top:2px; }
+            .ai-prob-line { font-size:12px; margin-top:14px; opacity:0.9; }
 
-        # --- ANA YAPAY ZEKA VE STRATEJİ BÖLÜMÜ ---
-        col_ai, col_strategy_preview = st.columns([1.35, 1.65])
-        
-        with col_ai:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            st.markdown("<div class='sub-label'>🤖 YAPAY ZEKA İŞLEM SİNYALİ & DOĞRULAMA</div>", unsafe_allow_html=True)
-            
-            # Sinyal Rozeti
-            st.markdown(f"<div class='{confluence['badge_class']}'>{confluence['signal_title']}</div>", unsafe_allow_html=True)
-            
-            st.markdown("<div style='margin-top: 15px;'>", unsafe_allow_html=True)
-            st.markdown(f"<div style='font-size: 13px; color: #cbd5e1; margin-bottom: 4px;'><b>🧠 AI Topluluk Güven Skoru:</b> %{confluence['confidence']:.1f} (LONG: %{ai_result['prob_long']*100:.1f} | SHORT: %{ai_result['prob_short']*100:.1f})</div>", unsafe_allow_html=True)
-            st.progress(ai_result['prob_long'])
-            st.markdown("</div>", unsafe_allow_html=True)
-            
+            .stat-card { background:#ffffff; border-radius:18px; padding:15px 16px; height:100%; }
+            .stat-icon { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; margin-bottom:10px; color:#fff; }
+            .stat-value { font-size:19px; font-weight:900; color:#1e1b2e; }
+            .stat-label { font-size:11px; color:#6b7280; margin-bottom:6px; }
+            .stat-progress-track { background:#f1f5f9; border-radius:8px; height:6px; overflow:hidden; margin-top:10px; }
+            .stat-progress-fill { height:100%; border-radius:8px; }
+            .stat-footer { display:flex; justify-content:space-between; font-size:10px; color:#94a3b8; margin-top:6px; }
+
+            .mini-card { background:#ffffff; border-radius:18px; padding:16px; height:100%; }
+            .mini-card-title { font-size:12px; font-weight:900; color:#1e1b2e; margin-bottom:10px; }
+            .check-row { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid #f1f5f9; font-size:11px; color:#334155; }
+            .check-row:last-child { border-bottom:none; }
+            .check-badge { padding:2px 9px; border-radius:12px; font-size:10px; font-weight:800; white-space:nowrap; }
+            .check-badge.pass { background:#dcfce7; color:#16a34a; }
+            .check-badge.warn { background:#fef3c7; color:#d97706; }
+            .check-badge.fail { background:#fee2e2; color:#dc2626; }
+
+            .sr-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; border-bottom:1px solid #f1f5f9; font-size:12px; }
+            .sr-row:last-child { border-bottom:none; }
+            .sr-price { font-weight:800; color:#1e1b2e; }
+            .sr-pct { font-weight:800; font-size:11px; }
+            .sr-pct.up { color:#16a34a; } .sr-pct.down { color:#dc2626; }
+
+            .tp-sl-card { border-radius:18px; padding:16px 18px; color:#fff; }
+            .tp-sl-card.min { background:linear-gradient(135deg, #2dd4bf, #059669); }
+            .tp-sl-card.max { background:linear-gradient(135deg, #8b5cf6, #4f46e5); }
+            .tp-sl-card.sl { background:linear-gradient(135deg, #fb923c, #dc2626); }
+            .tp-sl-label { font-size:11px; opacity:0.85; font-weight:800; }
+            .tp-sl-value { font-size:22px; font-weight:900; margin-top:5px; }
+            .tp-sl-sub { font-size:11px; opacity:0.85; margin-top:5px; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # 1) HERO GRAFİK KARTI + AI SİNYAL KARTI
+        hero_col, signal_col = st.columns([1.5, 1])
+
+        with hero_col:
+            chg_badge_icon = "▲" if change_24h >= 0 else "▼"
+            sparkline_svg = _build_hero_sparkline_svg(df_raw['close'].tail(120).tolist())
             st.markdown(f"""
-            <div style="background: #0b1120; padding: 12px; border-radius: 8px; border: 1px solid #1e293b; margin-top: 12px;">
-                <div style="font-size: 12px; color: #94a3b8;"><b>Doğruluk / Confluence Skoru:</b> <span style="font-size: 15px; font-weight: bold; color: #38bdf8;">%{confluence['confluence_score']}/100</span></div>
-                <div style="font-size: 12px; color: #cbd5e1; margin-top: 5px;">💡 <i>{confluence['action_note']}</i></div>
+            <div class="hero-chart-card">
+                <div style="font-size:11px; letter-spacing:1px; opacity:0.85; font-weight:700;">ANLIK CANLI FİYAT</div>
+                <div class="hero-price-row">
+                    <span class="hero-price">{fmt(current_price)}</span>
+                    <span class="hero-chg-badge">{chg_badge_icon} %{change_24h:+.2f} (24s)</span>
+                </div>
+                {sparkline_svg}
+                <div>
+                    <span class="hero-tf-pill {'active' if active_interval == 'Min1' else ''}">1dk</span>
+                    <span class="hero-tf-pill {'active' if active_interval == 'Min5' else ''}">5dk</span>
+                    <span class="hero-tf-pill {'active' if active_interval == 'Min15' else ''}">15dk</span>
+                    <span class="hero-tf-pill {'active' if active_interval == 'Min60' else ''}">1sa</span>
+                    <span class="hero-tf-pill {'active' if active_interval == 'Min240' else ''}">4sa</span>
+                </div>
             </div>
             """, unsafe_allow_html=True)
-            
-            # Onay Listesi (Confluence Checklist)
-            st.markdown("<div style='margin-top: 12px;'><div class='sub-label'>🛡️ Sahte Sinyal Filtre Kontrolleri</div>", unsafe_allow_html=True)
-            for name, detail, status, weight in confluence["checks"]:
-                cls_name = "check-pass" if status == "pass" else ("check-warn" if status == "warn" else "check-fail")
-                icon = "" if status == "pass" else ("" if status == "warn" else "")
+
+        with signal_col:
+            final_sig = confluence["final_signal"]
+            if "LONG" in final_sig:
+                dir_cls, dir_arrow = "dir-long", "↑"
+            elif "SHORT" in final_sig:
+                dir_cls, dir_arrow = "dir-short", "↓"
+            else:
+                dir_cls, dir_arrow = "dir-neutral", "—"
+
+            st.markdown(f"""
+            <div class="ai-signal-card {dir_cls}">
+                <div class="ai-signal-label">AI İŞLEM SİNYALİ</div>
+                <div class="ai-signal-title">{confluence['signal_title']} {dir_arrow}</div>
+                <div class="confidence-inner">
+                    <div class="confidence-value">%{confluence['confidence']:.0f}</div>
+                    <div class="confidence-label">GÜVEN</div>
+                </div>
+                <div class="ai-prob-line">LONG: %{ai_result['prob_long']*100:.1f} &nbsp;|&nbsp; SHORT: %{ai_result['prob_short']*100:.1f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+
+        # 2) KÜÇÜK İSTATİSTİK KARTLARI
+        s1c, s2c, s3c, s4c = st.columns(4)
+        b_ratio = depth.get("bid_ratio", 50)
+        a_ratio = depth.get("ask_ratio", 50)
+        u_chg_val = usdt_dom['usdt_d_change']
+        fund_dir_txt = "Uzun Ağırlıkta" if funding_rate > 0 else "Kısa Ağırlıkta"
+        u_dir_txt = "Kripto Boğa" if u_chg_val < 0 else "Nakite Kaçış"
+
+        stat_defs = [
+            (s1c, "#0e7490", "⚡", "Fonlama Oranı", f"%{funding_rate:.4f}", fund_dir_txt, min(abs(funding_rate) * 2000, 100)),
+            (s2c, "#f97316", "⚖️", "Alıcı/Satıcı Baskısı", f"%{b_ratio:.0f} / %{a_ratio:.0f}", depth.get('bias', 'DENGELİ'), b_ratio),
+            (s3c, "#8b5cf6", "🌐", "Dolar Dominansı", f"%{usdt_dom['usdt_d']:.2f}", u_dir_txt, min(usdt_dom['usdt_d'] * 8, 100)),
+            (s4c, "#16a34a", "🚀", "İşlem Gücü Skoru", f"%{risk['trade_power']:.0f}", risk['power_title'], risk['trade_power']),
+        ]
+        for col, color, icon, label, value, footer, pct in stat_defs:
+            with col:
                 st.markdown(f"""
-                <div class='checklist-item {cls_name}'>
-                    <span>{icon} <b>{name}</b></span>
-                    <span style='font-size: 12px;'>{detail}</span>
+                <div class="stat-card">
+                    <div class="stat-icon" style="background:{color};">{icon}</div>
+                    <div class="stat-label">{label}</div>
+                    <div class="stat-value">{value}</div>
+                    <div class="stat-progress-track"><div class="stat-progress-fill" style="width:{pct:.0f}%; background:{color};"></div></div>
+                    <div class="stat-footer"><span>{footer}</span><span>%{pct:.0f}</span></div>
                 </div>
                 """, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
-            
-        with col_strategy_preview:
-            st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-            total_pos_size = margin_budget * selected_leverage
+
+        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+
+        # 3) SAHTE SİNYAL FİLTRESİ + DESTEK/DİRENÇ MİNİ KARTLARI
+        filt_col, sr_col = st.columns(2)
+        with filt_col:
+            rows_html = ""
+            for name, detail, status, weight in confluence["checks"]:
+                badge_cls = "pass" if status == "pass" else ("warn" if status == "warn" else "fail")
+                badge_txt = "DOĞRULANDI" if status == "pass" else ("UYARI" if status == "warn" else "REDDEDİLDİ")
+                rows_html += f"""<div class="check-row"><span><b>{name}</b> — {detail}</span><span class="check-badge {badge_cls}">{badge_txt}</span></div>"""
             st.markdown(f"""
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                <div class='sub-label'>🎯 İŞLEM GÜCÜ VE KALDIRAÇLI HEDEF ÖZETİ</div>
-                <div style='font-size:12px; color:#38bdf8; font-weight:bold;'>Pozisyon: ${total_pos_size:,.0f} ({selected_leverage}x)</div>
+            <div class="mini-card">
+                <div class="mini-card-title">🛡️ SAHTE SİNYAL FİLTRE KONTROLLERİ</div>
+                {rows_html}
             </div>
             """, unsafe_allow_html=True)
-            
+
+        with sr_col:
+            def _sr_row(label, level_price):
+                dist_pct = abs(level_price - current_price) / max(current_price, 1e-9) * 100.0
+                is_above = level_price >= current_price
+                arrow = "▲" if is_above else "▼"
+                cls = "up" if is_above else "down"
+                return f"""<div class="sr-row"><span>{label}</span><span class="sr-price">{fmt(level_price)}</span><span class="sr-pct {cls}">{arrow} %{dist_pct:.2f}</span></div>"""
+
+            sr_rows = (
+                _sr_row("R2 (Zirve)", sr_levels.get('r2', current_price))
+                + _sr_row("R1 (Birincil)", sr_levels.get('r1', current_price))
+                + _sr_row("S1 (Birincil)", sr_levels.get('s1', current_price))
+                + _sr_row("S2 (Derin Dip)", sr_levels.get('s2', current_price))
+            )
             st.markdown(f"""
-            <div style="background: #0b1120; padding: 8px 12px; border-radius: 8px; border: 1px solid #1e293b; margin-bottom: 12px; display:flex; justify-content:space-between; align-items:center;">
-                <span>📍 <b>Giriş Fiyatı:</b> <span style="color:#38bdf8; font-size:16px; font-weight:bold;">{fmt(risk['entry'])}</span></span>
-                <span>💰 <b>Marjin:</b> ${margin_budget:,.0f} | <b>Kaldıraç:</b> {selected_leverage}x</span>
+            <div class="mini-card">
+                <div class="mini-card-title">📍 DESTEK & DİRENÇ</div>
+                {sr_rows}
             </div>
             """, unsafe_allow_html=True)
-            
-            # 1. MİN KAZANÇ
+
+        st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
+
+        # 4) TP / SL ÖZET KARTLARI
+        total_pos_size = margin_budget * selected_leverage
+        tp1, tp2, tp3 = st.columns(3)
+        with tp1:
             st.markdown(f"""
-            <div class='profit-box-min'>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:13px; font-weight:bold; color:#10b981;">🟢 MİN KAZANÇ (Yüksek İhtimalli TP)</span>
-                    <span style="background:rgba(16,185,129,0.2); color:#10b981; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">R:R = 1:{risk['rr_min']:.2f}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:6px;">
-                    <div>
-                        <div style="font-size:18px; font-weight:bold; color:#f8fafc;">{fmt(risk['min_tp_price'])}</div>
-                        <div style="font-size:12px; color:#94a3b8;">Fiyat: <b style="color:#10b981;">+%{risk['actual_min_pct']:.2f}</b> (ROE: <b style="color:#10b981;">+%{risk['actual_min_roe']:.1f}</b>)</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:11px; color:#94a3b8;">Net Min Kazanç:</div>
-                        <div style="font-size:20px; font-weight:900; color:#10b981;">+${risk['min_profit_usd']:,.2f}</div>
-                    </div>
-                </div>
+            <div class="tp-sl-card min">
+                <div class="tp-sl-label">🟢 MİN KAZANÇ (R:R 1:{risk['rr_min']:.2f})</div>
+                <div class="tp-sl-value">{fmt(risk['min_tp_price'])}</div>
+                <div class="tp-sl-sub">+%{risk['actual_min_pct']:.2f} (ROE +%{risk['actual_min_roe']:.1f}) &nbsp;•&nbsp; +${risk['min_profit_usd']:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-            
-            # 2. MAX KAZANÇ
+        with tp2:
             st.markdown(f"""
-            <div class='profit-box-max'>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:13px; font-weight:bold; color:#38bdf8;">🚀 MAX KAZANÇ (Zirve Potansiyel TP)</span>
-                    <span style="background:rgba(56,189,248,0.2); color:#38bdf8; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">R:R = 1:{risk['rr_max']:.2f}</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:6px;">
-                    <div>
-                        <div style="font-size:18px; font-weight:bold; color:#f8fafc;">{fmt(risk['max_tp_price'])}</div>
-                        <div style="font-size:12px; color:#94a3b8;">Fiyat: <b style="color:#38bdf8;">+%{risk['actual_max_pct']:.2f}</b> (ROE: <b style="color:#38bdf8;">+%{risk['actual_max_roe']:.1f}</b>)</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:11px; color:#94a3b8;">Net Max Kazanç:</div>
-                        <div style="font-size:20px; font-weight:900; color:#38bdf8;">+${risk['max_profit_usd']:,.2f}</div>
-                    </div>
-                </div>
+            <div class="tp-sl-card max">
+                <div class="tp-sl-label">🚀 MAX KAZANÇ (R:R 1:{risk['rr_max']:.2f})</div>
+                <div class="tp-sl-value">{fmt(risk['max_tp_price'])}</div>
+                <div class="tp-sl-sub">+%{risk['actual_max_pct']:.2f} (ROE +%{risk['actual_max_roe']:.1f}) &nbsp;•&nbsp; +${risk['max_profit_usd']:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-            
-            # 3. STOP-LOSS
+        with tp3:
             st.markdown(f"""
-            <div class='loss-box-sl'>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="font-size:13px; font-weight:bold; color:#ef4444;">🛑 ORANTILI STOP-LOSS (SL)</span>
-                    <span style="background:rgba(239,68,68,0.2); color:#ef4444; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:bold;">Risk Sınırı</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:6px;">
-                    <div>
-                        <div style="font-size:18px; font-weight:bold; color:#f8fafc;">{fmt(risk['sl_price'])}</div>
-                        <div style="font-size:12px; color:#94a3b8;">Fiyat: <b style="color:#ef4444;">-%{risk['actual_sl_pct']:.2f}</b> (ROE: <b style="color:#ef4444;">-%{risk['actual_sl_roe']:.1f}</b>)</div>
-                    </div>
-                    <div style="text-align:right;">
-                        <div style="font-size:11px; color:#94a3b8;">Göze Alınan Risk:</div>
-                        <div style="font-size:20px; font-weight:900; color:#ef4444;">-${risk['max_loss_usd']:,.2f}</div>
-                    </div>
-                </div>
+            <div class="tp-sl-card sl">
+                <div class="tp-sl-label">🛑 STOP-LOSS</div>
+                <div class="tp-sl-value">{fmt(risk['sl_price'])}</div>
+                <div class="tp-sl-sub">-%{risk['actual_sl_pct']:.2f} (ROE -%{risk['actual_sl_roe']:.1f}) &nbsp;•&nbsp; -${risk['max_loss_usd']:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
-            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div style="display:flex; justify-content:space-between; margin-top:12px; padding:10px 16px; border-radius:10px; background:#161b2e; border:1px solid #2a2f45; font-size:12px; color:#cbd5e1; flex-wrap:wrap; gap:8px;">
+            <span>📍 Giriş Fiyatı: <b style="color:#f0fdfa;">{fmt(risk['entry'])}</b></span>
+            <span>💰 Pozisyon: <b style="color:#f0fdfa;">${total_pos_size:,.0f}</b> ({selected_leverage}x, Marjin ${margin_budget:,.0f})</span>
+        </div>
+        """, unsafe_allow_html=True)
 
         # --- UZUN VADELİ MAJÖR DESTEK VE DİRENÇ YAPISAL ANALİZ KARTI ---
         st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
