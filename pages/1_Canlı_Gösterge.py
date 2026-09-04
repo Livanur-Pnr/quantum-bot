@@ -1324,7 +1324,7 @@ with st.sidebar:
             border: 1px solid rgba(15,43,46,0.08) !important;
         }
         [data-testid="stSidebar"] [data-testid="stButton"] button {
-            background: linear-gradient(135deg, #2dd4bf, #fb923c) !important;
+            background: linear-gradient(135deg, #2dd4bf, #0e7490) !important;
             color: #ffffff !important;
             border: none !important;
             border-radius: 999px !important;
