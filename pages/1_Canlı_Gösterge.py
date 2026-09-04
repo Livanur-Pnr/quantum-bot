@@ -1290,7 +1290,55 @@ def compute_institutional_risk_levels(
 
 # --- 6.5. SIDEBAR API ANAHTARLARI VE İŞLEM KONTROLLERİ ---
 with st.sidebar:
-    st.markdown("### 🔐 Borsa API & Otomasyon")
+    st.markdown("""
+    <style>
+        [data-testid="stSidebar"] { background:#eaf6f4 !important; }
+
+        [data-testid="stSidebarNavLink"] { border-radius:999px !important; margin-bottom:6px !important; }
+        [data-testid="stSidebarNavLink"] p, [data-testid="stSidebarNavLink"] span { color:#0f2b2e !important; }
+        [data-testid="stSidebarNavLink"]:not([aria-current="page"]) { background:#ffffff !important; }
+        [data-testid="stSidebarNavLink"][aria-current="page"] { background:linear-gradient(135deg, #2dd4bf, #14b8a6) !important; }
+        [data-testid="stSidebarNavLink"][aria-current="page"] p, [data-testid="stSidebarNavLink"][aria-current="page"] span { color:#ffffff !important; }
+        [data-testid="stSidebar"] .sb-section-title { font-size:15px; font-weight:900; color:#0f2b2e; margin:14px 0 2px 0; }
+        [data-testid="stSidebar"] .sb-section-sub { font-size:11px; color:#5f7d7a; margin-bottom:10px; }
+
+        [data-testid="stSidebar"] [data-testid="stSelectbox"] > div > div,
+        [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div,
+        [data-testid="stSidebar"] [data-testid="stNumberInput"] > div > div {
+            background: linear-gradient(90deg, rgba(45,212,191,0.22), rgba(251,146,60,0.22)) !important;
+            border-radius: 999px !important;
+            border: 1px solid rgba(15,43,46,0.10) !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stExpander"] {
+            background: #ffffff !important;
+            border-radius: 16px !important;
+            border: 1px solid rgba(15,43,46,0.08) !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stButton"] button {
+            background: linear-gradient(135deg, #2dd4bf, #fb923c) !important;
+            color: #ffffff !important;
+            border: none !important;
+            border-radius: 999px !important;
+            font-weight: 800 !important;
+        }
+        [data-testid="stSidebar"] [data-testid="stButton"] button:hover { filter: brightness(1.08); }
+        [data-testid="stSidebar"] [data-testid="stButton"] button p { color:#ffffff !important; }
+        [data-testid="stSidebar"] [data-testid="stCheckbox"] p,
+        [data-testid="stSidebar"] [data-testid="stCheckbox"] span,
+        [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p,
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { color:#0f2b2e !important; }
+
+        .sb-teal-card { background:linear-gradient(135deg, #14b8a6, #0e7490); border-radius:16px; padding:14px 16px; color:#ffffff; margin:10px 0; }
+        .sb-teal-card .sb-lbl { font-size:11px; opacity:0.9; font-weight:700; }
+        .sb-teal-card .sb-val { font-size:19px; font-weight:900; margin-top:2px; }
+        .sb-warn-card { background:#fff7ed; border:1px solid #fdba74; border-radius:16px; padding:12px 16px; color:#9a3412; font-size:12px; font-weight:700; margin:10px 0; }
+        .sb-white-card { background:#ffffff; border-radius:16px; padding:14px 16px; margin:6px 0; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div class='sb-section-title'>🔐 Borsa API & Otomasyon</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sb-section-sub'>Professional Borsa API & Otomasyon</div>", unsafe_allow_html=True)
 
     selected_exchange_label = st.selectbox(
         "🏦 Borsa Seçimi:",
@@ -1321,76 +1369,78 @@ with st.sidebar:
         bal = fetch_binance_account_balance(selected_exchange_id, active_api_key, active_secret_key)
         if bal["status"] == "FUTURES_OK":
             wallet_balance_val = bal['wallet_balance']
-            st.success(f"🟢 Private API: VADELİ BAĞLI & HAZIR\n\n💰 Vadeli Cüzdan: ${wallet_balance_val:,.2f} USDT")
+            st.markdown(f"""
+            <div class="sb-teal-card">
+                <div class="sb-lbl">🟢 Private API: VADELİ BAĞLI & HAZIR</div>
+                <div class="sb-val">💰 ${wallet_balance_val:,.2f} USDT</div>
+            </div>
+            """, unsafe_allow_html=True)
             ignore_wallet_for_budget = st.checkbox(
                 "🔓 Kasa sınırı olmadan genel analiz yap",
                 value=False,
                 help="İşaretlerseniz Bütçe/Marjin alanı gerçek cüzdan bakiyenizle sınırlanmaz; TP/SL hesaplamaları kasanızdan bağımsız, sadece genel bir analiz olarak yapılır."
             )
         else:
-            st.warning(" API Anahtarı Algılandı Fakat Yetki Reddedildi (IP kısıtlaması veya geçersiz anahtar)")
+            st.markdown("<div class='sb-warn-card'>⚠️ API Anahtarı Algılandı Fakat Yetki Reddedildi (IP kısıtlaması veya geçersiz anahtar)</div>", unsafe_allow_html=True)
     else:
-        st.warning(" Private API: BAĞLI DEĞİL (Yalnızca Sinyal Modu)")
-        st.caption("📌 Proje klasörünüzdeki `.env` dosyasına API anahtarınızı girip kaydedin VEYA yukarıdaki menüye yapıştırın.")
+        st.markdown("<div class='sb-warn-card'>⚠️ Private API: BAĞLI DEĞİL (Yalnızca Sinyal Modu)<br><span style='font-weight:400;'>📌 Proje klasörünüzdeki .env dosyasına API anahtarınızı girip kaydedin VEYA yukarıdaki menüye yapıştırın.</span></div>", unsafe_allow_html=True)
 
     # "Kasa sinirlamasi" sadece butce ust sinirini belirlerken kullanilir; cuzdan bakiyesi
     # (wallet_balance_val) yine de Sermaye & Kasa Takip Panelinde bilgi amacli gosterilmeye devam eder.
     budget_cap_balance = 0.0 if ignore_wallet_for_budget else wallet_balance_val
-        
-    st.markdown("---")
-    st.markdown("### 💵 Sermaye & Kasa Takip Paneli")
+
+    st.markdown("<div class='sb-section-title' style='margin-top:18px;'>💵 Sermaye & Kasa Takip Paneli</div>", unsafe_allow_html=True)
     initial_capital = st.number_input("Başlangıç Sermayesi ($):", min_value=10.0, max_value=100000.0, value=100.0, step=50.0, help="Botu başlattığınız kasa bütçesi")
-    
+
     current_kasa = wallet_balance_val if wallet_balance_val > 0 else initial_capital
     net_pnl = current_kasa - initial_capital
     net_return_pct = (net_pnl / (initial_capital + 1e-9)) * 100.0
-    pnl_clr = "#10b981" if net_pnl >= 0 else "#ef4444"
-    
+    pnl_clr = "#059669" if net_pnl >= 0 else "#dc2626"
+
     st.markdown(f"""
-    <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #1e293b; margin-top:6px;">
-        <div style="display:flex; justify-content:space-between; font-size:12px; color:#94a3b8;">
+    <div class="sb-white-card">
+        <div style="display:flex; justify-content:space-between; font-size:12px; color:#5f7d7a;">
             <span>Güncel Anlık Kasa:</span>
-            <b style="color:#38bdf8;">${current_kasa:,.2f} USD</b>
+            <b style="color:#0e7490;">${current_kasa:,.2f} USD</b>
         </div>
         <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-top:4px;">
-            <span>Net Kâr/Zarar:</span>
+            <span style="color:#0f2b2e;">Net Kâr/Zarar:</span>
             <span style="color:{pnl_clr};">{net_pnl:+,.2f} USD (%{net_return_pct:+.1f})</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     # --- COİN & GÖSTERGE KONTROLLERİ (Kullanıcı isteğiyle ana panelden sol menüye taşındı) ---
-    st.markdown("---")
-    st.markdown("### ⚡ Coin & Gösterge Kontrolleri")
+    st.markdown("<div class='sb-section-title' style='margin-top:18px;'>⚡ Coin & Gösterge Kontrolleri</div>", unsafe_allow_html=True)
 
     if "active_symbol_query" not in st.session_state:
         st.session_state["active_symbol_query"] = "BTCUSDT"
 
-    st.markdown("<div style='margin-bottom:6px; font-size:12px; color:#94a3b8; font-weight:bold; text-transform:uppercase;'>⚡ Hızlı Favori Coin Seçimi:</div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-bottom:6px; font-size:11px; color:#5f7d7a; font-weight:800; text-transform:uppercase;'>Hızlı Favori Coin Seçimi:</div>", unsafe_allow_html=True)
     fav_row1 = st.columns(2)
     fav_row2 = st.columns(2)
     fav_row3 = st.columns(2)
     fav_row4 = st.columns(2)
 
-    if fav_row1[0].button("⚡ BTC", use_container_width=True):
+    if fav_row1[0].button("BTC", use_container_width=True):
         st.session_state["active_symbol_query"] = "BTCUSDT"
         st.rerun()
-    if fav_row1[1].button("💎 ETH", use_container_width=True):
+    if fav_row1[1].button("ETH", use_container_width=True):
         st.session_state["active_symbol_query"] = "ETHUSDT"
         st.rerun()
-    if fav_row2[0].button("🚀 SOL", use_container_width=True):
+    if fav_row2[0].button("SOL", use_container_width=True):
         st.session_state["active_symbol_query"] = "SOLUSDT"
         st.rerun()
-    if fav_row2[1].button("🐸 1000PEPE", use_container_width=True):
+    if fav_row2[1].button("1000PEPE", use_container_width=True):
         st.session_state["active_symbol_query"] = "1000PEPEUSDT"
         st.rerun()
-    if fav_row3[0].button("🌊 SUI", use_container_width=True):
+    if fav_row3[0].button("SUI", use_container_width=True):
         st.session_state["active_symbol_query"] = "SUIUSDT"
         st.rerun()
-    if fav_row3[1].button("🐕 DOGE", use_container_width=True):
+    if fav_row3[1].button("DOGE", use_container_width=True):
         st.session_state["active_symbol_query"] = "DOGEUSDT"
         st.rerun()
-    if fav_row4[0].button("⚡ XRP", use_container_width=True):
+    if fav_row4[0].button("XRP", use_container_width=True):
         st.session_state["active_symbol_query"] = "XRPUSDT"
         st.rerun()
 
@@ -1625,7 +1675,10 @@ def render_quantum_terminal():
             .st-key-tf_pill_bar [data-testid="stButton"] button { width:100%; border:none !important; border-radius:16px !important; font-size:11px !important; font-weight:800 !important; padding:4px 0 !important; min-height:32px !important; box-shadow:none !important; }
             .st-key-tf_pill_bar [data-testid="stBaseButton-secondary"] { background:rgba(255,255,255,0.15) !important; color:#e0fbfc !important; }
             .st-key-tf_pill_bar [data-testid="stBaseButton-secondary"]:hover { background:rgba(255,255,255,0.28) !important; color:#ffffff !important; }
-            .st-key-tf_pill_bar [data-testid="stBaseButton-primary"] { background:#ffffff !important; color:#0e7490 !important; }
+            .st-key-tf_pill_bar.st-key-tf_pill_bar [data-testid="stBaseButton-primary"],
+            .st-key-tf_pill_bar.st-key-tf_pill_bar button[kind="primary"] { background:#ffffff !important; color:#0e7490 !important; border-color:#ffffff !important; }
+            .st-key-tf_pill_bar.st-key-tf_pill_bar [data-testid="stBaseButton-primary"] p,
+            .st-key-tf_pill_bar.st-key-tf_pill_bar button[kind="primary"] p { color:#0e7490 !important; }
             .hero-price-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:4px; }
             .hero-price { font-size:30px; font-weight:900; }
             .hero-chg-badge { background:rgba(255,255,255,0.25); padding:4px 12px; border-radius:20px; font-size:12px; font-weight:800; }
@@ -2042,23 +2095,42 @@ def render_quantum_terminal():
 # Burada gerçek bir st.button() tam sayfa yenilemesi tetikleyip aynı
 # "active_timeframe_label" session_state anahtarını (sidebar'daki dropdown ile paylaşılan)
 # güncelliyor, böylece herhangi bir zaman dilimine gerçekten geçilebiliyor.
+# NOT: st.button + type="primary" ile Streamlit'in kendi tema rengini (kırmızı) CSS ile
+# ezmeye çalışmak güvenilmez çıktı (Streamlit'in dahili emotion stilleri kazanıyordu).
+# Bunun yerine tam da bu amaç için var olan st.segmented_control kullanılıyor.
+_tf_short_map = {
+    "1dk": "1 Dakika (Scalp)",
+    "5dk": "5 Dakika (Day Trade)",
+    "15dk": "15 Dakika (Swing)",
+    "1sa": "1 Saat (Trend)",
+    "4sa": "4 Saatlik (Saatlik Scalp / Trend)",
+}
+_current_short = next((s for s, f in _tf_short_map.items() if f == st.session_state["active_timeframe_label"]), "1dk")
+
+# ÖNEMLİ: Bu senkronizasyon SADECE "dıştan" bir değişikliği (ör. sidebar'daki Zaman
+# Dilimi dropdown'undan gelen) segmented_control'e yansıtmak için var. Kullanıcının
+# pile TIKLAMASI on_change callback'i üzerinden ayrı akıyor (aşağıda) — o yüzden bu
+# satır kullanıcının az önce yaptığı tıklamayı asla ezmiyor: callback zaten çalışıp
+# active_timeframe_label'ı güncellemiş oluyor, bu yüzden _current_short ile
+# tf_pill_segmented burada zaten eşleşiyor.
+if st.session_state.get("tf_pill_segmented") != _current_short:
+    st.session_state["tf_pill_segmented"] = _current_short
+
+def _on_tf_pill_change():
+    picked = st.session_state.get("tf_pill_segmented")
+    if picked and _tf_short_map.get(picked) and _tf_short_map[picked] != st.session_state["active_timeframe_label"]:
+        st.session_state["_pending_timeframe"] = _tf_short_map[picked]
+
 _tf_pill_col, _tf_spacer_col = st.columns([1.5, 1])
 with _tf_pill_col:
     with st.container(key="tf_pill_bar"):
-        _tf_options = [
-            ("1dk", "1 Dakika (Scalp)"),
-            ("5dk", "5 Dakika (Day Trade)"),
-            ("15dk", "15 Dakika (Swing)"),
-            ("1sa", "1 Saat (Trend)"),
-            ("4sa", "4 Saatlik (Saatlik Scalp / Trend)"),
-        ]
-        _tf_cols = st.columns(5)
-        for _col, (_short, _full) in zip(_tf_cols, _tf_options):
-            with _col:
-                _is_active = st.session_state["active_timeframe_label"] == _full
-                if st.button(_short, key=f"tf_pill_{_full}", type="primary" if _is_active else "secondary"):
-                    st.session_state["_pending_timeframe"] = _full
-                    st.rerun()
+        st.segmented_control(
+            "Zaman Dilimi",
+            list(_tf_short_map.keys()),
+            key="tf_pill_segmented",
+            label_visibility="collapsed",
+            on_change=_on_tf_pill_change,
+        )
 
 # Terminali Çalıştır
 render_quantum_terminal()
