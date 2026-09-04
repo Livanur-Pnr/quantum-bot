@@ -78,9 +78,9 @@ PREMIUM_CSS = """
     .gemini-status-pill.ok { background:linear-gradient(135deg, #14b8a6, #0e7490); color:#ffffff; }
     .gemini-status-pill.missing { background:#fff7ed; border:1px solid #fdba74; color:#9a3412; }
 
-    .news-header-bar { background:#ffffff; border:3px solid #0e7490; border-radius:20px; padding:18px 24px; margin-bottom:6px; display:flex; align-items:center; gap:14px; }
-    .news-header-icon { background:#ffffff; border:2px solid #0e7490; color:#0e7490; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
-    .news-header-title { font-size:30px; font-weight:900; color:#0e7490; margin:0; }
+    .news-header-bar { background:#ffffff; border:6px solid #14b8a6; border-radius:20px; padding:18px 24px; margin-bottom:6px; display:flex; align-items:center; gap:14px; }
+    .news-header-icon { background:#ffffff; border:3px solid #14b8a6; color:#14b8a6; width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+    .news-header-title { font-size:30px; font-weight:900; color:#14b8a6; margin:0; }
 </style>
 """
 st.markdown(PREMIUM_CSS, unsafe_allow_html=True)
