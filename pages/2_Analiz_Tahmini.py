@@ -83,6 +83,12 @@ PREMIUM_CSS = """
     [data-testid="stSidebarNavLink"][aria-current="page"] p, [data-testid="stSidebarNavLink"][aria-current="page"] span { color:#ffffff !important; }
     [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { font-weight:800 !important; color:#0f2b2e !important; font-size:13.5px !important; }
     [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { font-weight:700; }
+    [data-testid="stSidebar"] [data-testid="stSelectbox"] input,
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input,
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] input {
+        font-weight:700 !important; color:#0f2b2e !important; font-size:14px !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stTextInput"] input::placeholder { font-weight:500 !important; color:#5f7d7a !important; }
 
     [data-testid="stSidebar"] [data-testid="stSelectbox"] > div > div,
     [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div,
