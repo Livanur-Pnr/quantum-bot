@@ -1658,14 +1658,34 @@ def render_quantum_terminal():
         st.markdown("""
         <style>
             .hero-chart-card { background:#ffffff; border-radius:0 0 20px 20px; padding:14px 22px 20px 22px; color:#0f2b2e; height:100%; margin-top:-8px; box-shadow:0 4px 14px rgba(15,43,46,0.06); }
-            .st-key-tf_pill_bar { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:20px 20px 0 0; padding:12px 16px 6px 16px; }
-            .st-key-tf_pill_bar [data-testid="stButton"] button { width:100%; border:none !important; border-radius:16px !important; font-size:11px !important; font-weight:800 !important; padding:4px 0 !important; min-height:32px !important; box-shadow:none !important; }
-            .st-key-tf_pill_bar [data-testid="stBaseButton-secondary"] { background:rgba(255,255,255,0.15) !important; color:#e0fbfc !important; }
-            .st-key-tf_pill_bar [data-testid="stBaseButton-secondary"]:hover { background:rgba(255,255,255,0.28) !important; color:#ffffff !important; }
-            .st-key-tf_pill_bar.st-key-tf_pill_bar [data-testid="stBaseButton-primary"],
-            .st-key-tf_pill_bar.st-key-tf_pill_bar button[kind="primary"] { background:#ffffff !important; color:#0e7490 !important; border-color:#ffffff !important; }
-            .st-key-tf_pill_bar.st-key-tf_pill_bar [data-testid="stBaseButton-primary"] p,
-            .st-key-tf_pill_bar.st-key-tf_pill_bar button[kind="primary"] p { color:#0e7490 !important; }
+            /* NOT: st.segmented_control, st.button'dan TAMAMEN FARKLI bir DOM/testid yapısı
+               kullanıyor (stButtonGroup > button[data-variant="segmented_control"], seçili
+               durum aria-checked ile belirleniyor) - eski stBaseButton-primary/secondary
+               kuralları hiç eşleşmiyordu, bu yüzden segmentler Streamlit'in varsayılan
+               (koyu/siyah) temasıyla kalıyordu. Doğru seçicilerle yeniden yazıldı. */
+            .st-key-tf_pill_bar { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:20px 20px 0 0; padding:12px 16px 8px 16px; }
+            .st-key-tf_pill_bar [data-testid="stWidgetLabel"] { display:none !important; }
+            /* NOT: Streamlit bu elemanlara width="fit-content" HTML özniteliği veriyor,
+               bu yuzden sadece butonlarin gercek metin genisligi kadar yer kapliyorlardi
+               (5 pil ~144px'e sikisip "15dk" gibi metinler kesiliyordu). Tum zinciri
+               (element container -> button group -> radiogroup) %100 genislige zorluyoruz. */
+            .st-key-tf_pill_bar [data-testid="stElementContainer"] { width:100% !important; }
+            .st-key-tf_pill_bar [data-testid="stButtonGroup"] { width:100% !important; gap:6px !important; }
+            .st-key-tf_pill_bar [data-testid="stButtonGroup"] > div[role="radiogroup"] { width:100% !important; max-width:100% !important; gap:6px; display:flex; }
+            .st-key-tf_pill_bar button[data-variant="segmented_control"] {
+                flex:1 1 0; min-width:0; width:100%; border:none !important; border-radius:16px !important;
+                font-size:12px !important; font-weight:900 !important; letter-spacing:0;
+                padding:6px 2px !important; min-height:34px !important; box-shadow:none !important;
+                background:rgba(255,255,255,0.16) !important; color:#f0fdfa !important;
+                transition:background 0.15s ease, color 0.15s ease; white-space:nowrap; overflow:hidden;
+            }
+            .st-key-tf_pill_bar button[data-variant="segmented_control"]:hover { background:rgba(255,255,255,0.30) !important; color:#ffffff !important; }
+            .st-key-tf_pill_bar button[data-variant="segmented_control"] p { font-size:12px !important; font-weight:900 !important; color:inherit !important; white-space:nowrap; }
+            .st-key-tf_pill_bar button[data-variant="segmented_control"] > div { min-width:0; }
+            .st-key-tf_pill_bar button[data-variant="segmented_control"][aria-checked="true"] {
+                background:#ffffff !important; color:#0e7490 !important; box-shadow:0 2px 8px rgba(0,0,0,0.15) !important;
+            }
+            .st-key-tf_pill_bar button[data-variant="segmented_control"][aria-checked="true"] p { color:#0e7490 !important; }
             .hero-price-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:4px; }
             .hero-price { font-size:30px; font-weight:900; color:#0f2b2e; }
             .hero-chg-badge { padding:4px 12px; border-radius:20px; font-size:12px; font-weight:800; }
