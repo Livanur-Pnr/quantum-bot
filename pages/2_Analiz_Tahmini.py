@@ -546,29 +546,58 @@ def _build_sparkline_svg(prices, width: int = 500, height: int = 60, line_color:
 #      yani remount/flas fiziksel olarak imkansiz hale geliyor.
 _CHART_DATA_HOST = "127.0.0.1"
 _CHART_DATA_PORT = 8765
-_chart_data_lock = threading.Lock()
-_chart_data_store: dict = {}
 
 
-class _ChartDataHandler(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        if parsed.path == "/chart_data":
-            key = parse_qs(parsed.query).get("key", [""])[0]
-            with _chart_data_lock:
-                payload = _chart_data_store.get(key, "")
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write((payload or "{}").encode("utf-8"))
-        else:
-            self.send_response(404)
-            self.end_headers()
+class _ChartDataStore:
+    """Yayinlanan grafik JSON'larini tutan, sunucu ile publish tarafi arasinda PAYLASILAN
+    tek nesne.
 
-    def log_message(self, format, *args):
-        pass  # konsolu kirletmesin - sessiz calis
+    ONEMLI - KOK NEDEN (grafiğin saatlerce/gunlerce eski veri gostermesi): Bu store ONCEDEN
+    duz bir modul-seviyesi global degiskendi (_chart_data_store = {}). Streamlit bu sayfa
+    dosyasinda herhangi bir KOD DEGISIKLIGI oldugunda scripti yeniden calistirir (hot-reload)
+    ve bu, modul-seviyesi globali SIFIRDAN yeni bir dict ile YENIDEN TANIMLAR. Ama HTTP
+    sunucu thread'i (@st.cache_resource sayesinde process boyunca hic yeniden baslatilmiyor)
+    zaten calisan _ChartDataHandler ORIJINAL/ESKI dict'i okumaya devam ediyordu - publish
+    tarafi ise HER YENI hot-reload sonrasi YENI dict'e yaziyordu. Sonuc: sunucu asla publish
+    edilen taze veriyi gormuyor, sonsuza kadar ilk (veya son basarili) donemin verisini
+    donduruyordu. Cozum: store artik @st.cache_resource ile ONBELLEKLENEN TEK BIR NESNE -
+    hem sunucunun kapatma (closure) referansi hem de her publish cagrisinin aldigi referans
+    HER ZAMAN AYNI NESNE oluyor, kod kac kez yeniden yuklenirse yuklensin.
+    """
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.data: dict = {}
+
+    def get(self, key: str) -> str:
+        with self.lock:
+            return self.data.get(key, "")
+
+    def set(self, key: str, payload: str) -> None:
+        with self.lock:
+            self.data[key] = payload
+
+
+def _make_chart_data_handler(store: "_ChartDataStore"):
+    class _ChartDataHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            if parsed.path == "/chart_data":
+                key = parse_qs(parsed.query).get("key", [""])[0]
+                payload = store.get(key)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write((payload or "{}").encode("utf-8"))
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format, *args):
+            pass  # konsolu kirletmesin - sessiz calis
+
+    return _ChartDataHandler
 
 
 def _port_is_free(host: str, port: int) -> bool:
@@ -581,20 +610,23 @@ def _port_is_free(host: str, port: int) -> bool:
 
 
 @st.cache_resource(show_spinner=False)
-def _ensure_chart_data_server():
-    # ONEMLI: @st.cache_resource sayesinde bu fonksiyon TUM oturumlar/reruns boyunca process
-    # basina SADECE BIR KEZ calisir - sunucu tekrar tekrar baslatilmaya calisilmaz.
+def _ensure_chart_data_server() -> "_ChartDataStore":
+    # ONEMLI: @st.cache_resource sayesinde bu fonksiyon TUM oturumlar/reruns/hot-reload'lar
+    # boyunca process basina SADECE BIR KEZ calisir - donen store nesnesi HER ZAMAN ayni
+    # kalir, sunucu tekrar tekrar baslatilmaya calisilmaz.
+    store = _ChartDataStore()
     if not _port_is_free(_CHART_DATA_HOST, _CHART_DATA_PORT):
-        return None  # baska bir session/process zaten baslatmis olabilir - sorun degil
-    server = http.server.ThreadingHTTPServer((_CHART_DATA_HOST, _CHART_DATA_PORT), _ChartDataHandler)
+        return store  # baska bir sunucu zaten port'u dinliyor olabilir - yine de store dondur
+    handler_cls = _make_chart_data_handler(store)
+    server = http.server.ThreadingHTTPServer((_CHART_DATA_HOST, _CHART_DATA_PORT), handler_cls)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    return server
+    return store
 
 
 def _publish_chart_figure(key: str, fig: go.Figure) -> None:
-    with _chart_data_lock:
-        _chart_data_store[key] = fig.to_json()
+    store = _ensure_chart_data_server()
+    store.set(key, fig.to_json())
 
 
 def render_live_chart_component(chart_key: str, height: int = 850) -> None:
