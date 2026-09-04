@@ -1310,6 +1310,8 @@ with st.sidebar:
         [data-testid="stSidebarNavLink"][aria-current="page"] p, [data-testid="stSidebarNavLink"][aria-current="page"] span { color:#ffffff !important; }
         [data-testid="stSidebar"] .sb-section-title { font-size:15px; font-weight:900; color:#0f2b2e; margin:14px 0 2px 0; }
         [data-testid="stSidebar"] .sb-section-sub { font-size:11px; color:#5f7d7a; margin-bottom:10px; }
+        [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { font-weight:800 !important; color:#0f2b2e !important; font-size:13.5px !important; }
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { font-weight:700; }
 
         [data-testid="stSidebar"] [data-testid="stSelectbox"] > div > div,
         [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div,

@@ -81,6 +81,8 @@ PREMIUM_CSS = """
     [data-testid="stSidebarNavLink"]:not([aria-current="page"]) { background:#ffffff !important; }
     [data-testid="stSidebarNavLink"][aria-current="page"] { background:linear-gradient(135deg, #2dd4bf, #14b8a6) !important; }
     [data-testid="stSidebarNavLink"][aria-current="page"] p, [data-testid="stSidebarNavLink"][aria-current="page"] span { color:#ffffff !important; }
+    [data-testid="stSidebar"] [data-testid="stWidgetLabel"] p { font-weight:800 !important; color:#0f2b2e !important; font-size:13.5px !important; }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p { font-weight:700; }
 
     [data-testid="stSidebar"] [data-testid="stSelectbox"] > div > div,
     [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div,
