@@ -1422,7 +1422,17 @@ with st.sidebar:
         "1 Saat (Trend)": "Min60",
         "4 Saatlik (Saatlik Scalp / Trend)": "Min240"
     }
-    selected_tf_label = st.selectbox("⏱️ Zaman Dilimi:", list(timeframe_map.keys()), index=0)
+    # "active_timeframe_label" session_state anahtarı, hero karttaki tıklanabilir zaman
+    # dilimi pilleriyle PAYLAŞILIYOR (aşağıda, render_quantum_terminal() çağrılmadan önce).
+    # ÖNEMLİ: Widget'ın kendi key'i (active_timeframe_label) instantiate edildikten SONRA
+    # doğrudan değiştirilemiyor (StreamlitAPIException) — bu yüzden pil butonları ayrı bir
+    # "_pending_timeframe" anahtarına yazıyor, biz de widget oluşmadan HEMEN ÖNCE burada
+    # onu asıl anahtara aktarıp temizliyoruz.
+    if "active_timeframe_label" not in st.session_state:
+        st.session_state["active_timeframe_label"] = "1 Dakika (Scalp)"
+    if "_pending_timeframe" in st.session_state:
+        st.session_state["active_timeframe_label"] = st.session_state.pop("_pending_timeframe")
+    selected_tf_label = st.selectbox("⏱️ Zaman Dilimi:", list(timeframe_map.keys()), key="active_timeframe_label")
     active_interval = timeframe_map[selected_tf_label]
 
     # ONEMLI: Kaldirac artik sabit secenekler yerine serbest metin/sayi girisi - kullanici
@@ -1610,7 +1620,12 @@ def render_quantum_terminal():
         # --- "VIVID FINTECH" HERO BÖLÜMÜ (Stitch referans tasarımına göre) ---
         st.markdown("""
         <style>
-            .hero-chart-card { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:20px; padding:20px 22px; color:#ffffff; height:100%; }
+            .hero-chart-card { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:0 0 20px 20px; padding:14px 22px 20px 22px; color:#ffffff; height:100%; margin-top:-8px; }
+            .st-key-tf_pill_bar { background:linear-gradient(135deg, #14b8a6 0%, #0e7490 100%); border-radius:20px 20px 0 0; padding:12px 16px 6px 16px; }
+            .st-key-tf_pill_bar [data-testid="stButton"] button { width:100%; border:none !important; border-radius:16px !important; font-size:11px !important; font-weight:800 !important; padding:4px 0 !important; min-height:32px !important; box-shadow:none !important; }
+            .st-key-tf_pill_bar [data-testid="stBaseButton-secondary"] { background:rgba(255,255,255,0.15) !important; color:#e0fbfc !important; }
+            .st-key-tf_pill_bar [data-testid="stBaseButton-secondary"]:hover { background:rgba(255,255,255,0.28) !important; color:#ffffff !important; }
+            .st-key-tf_pill_bar [data-testid="stBaseButton-primary"] { background:#ffffff !important; color:#0e7490 !important; }
             .hero-price-row { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:4px; }
             .hero-price { font-size:30px; font-weight:900; }
             .hero-chg-badge { background:rgba(255,255,255,0.25); padding:4px 12px; border-radius:20px; font-size:12px; font-weight:800; }
@@ -1693,13 +1708,6 @@ def render_quantum_terminal():
                     <span class="hero-chg-badge">{chg_badge_icon} %{change_24h:+.2f} (24s)</span>
                 </div>
                 {sparkline_svg}
-                <div>
-                    <span class="hero-tf-pill {'active' if active_interval == 'Min1' else ''}">1dk</span>
-                    <span class="hero-tf-pill {'active' if active_interval == 'Min5' else ''}">5dk</span>
-                    <span class="hero-tf-pill {'active' if active_interval == 'Min15' else ''}">15dk</span>
-                    <span class="hero-tf-pill {'active' if active_interval == 'Min60' else ''}">1sa</span>
-                    <span class="hero-tf-pill {'active' if active_interval == 'Min240' else ''}">4sa</span>
-                </div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -2027,6 +2035,30 @@ def render_quantum_terminal():
     # İşlem Motoru Gecikme Bilgisi
     elapsed_ms = (time.time() - fetch_start) * 1000
     st.caption(f"⚡ BtcSatoshi Live-Trade & AI Quant Engine: {elapsed_ms:.1f} ms | Model: Ensemble (RF+ET+HGB) | Canlı Borsa: {selected_exchange_label} Futures")
+
+# Zaman dilimi pilleri BİLİNÇLİ OLARAK fragment'in DIŞINDA tanımlanıyor: fragment içinde
+# olsalardı tıklama sadece fragment'i yeniden çalıştırır, sidebar'daki selectbox'tan
+# hesaplanan active_interval değişmezdi (fragment rerun'u dış scope'u tekrar çalıştırmaz).
+# Burada gerçek bir st.button() tam sayfa yenilemesi tetikleyip aynı
+# "active_timeframe_label" session_state anahtarını (sidebar'daki dropdown ile paylaşılan)
+# güncelliyor, böylece herhangi bir zaman dilimine gerçekten geçilebiliyor.
+_tf_pill_col, _tf_spacer_col = st.columns([1.5, 1])
+with _tf_pill_col:
+    with st.container(key="tf_pill_bar"):
+        _tf_options = [
+            ("1dk", "1 Dakika (Scalp)"),
+            ("5dk", "5 Dakika (Day Trade)"),
+            ("15dk", "15 Dakika (Swing)"),
+            ("1sa", "1 Saat (Trend)"),
+            ("4sa", "4 Saatlik (Saatlik Scalp / Trend)"),
+        ]
+        _tf_cols = st.columns(5)
+        for _col, (_short, _full) in zip(_tf_cols, _tf_options):
+            with _col:
+                _is_active = st.session_state["active_timeframe_label"] == _full
+                if st.button(_short, key=f"tf_pill_{_full}", type="primary" if _is_active else "secondary"):
+                    st.session_state["_pending_timeframe"] = _full
+                    st.rerun()
 
 # Terminali Çalıştır
 render_quantum_terminal()
