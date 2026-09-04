@@ -1653,7 +1653,6 @@ def render_quantum_terminal():
 
             .tp-sl-card { border-radius:18px; padding:16px 18px; color:#fff; }
             .tp-sl-card.min { background:linear-gradient(135deg, #2dd4bf, #059669); }
-            .tp-sl-card.max { background:linear-gradient(135deg, #8b5cf6, #4f46e5); }
             .tp-sl-card.sl { background:linear-gradient(135deg, #fb923c, #dc2626); }
             .tp-sl-label { font-size:11px; opacity:0.85; font-weight:800; }
             .tp-sl-value { font-size:22px; font-weight:900; margin-top:5px; }
@@ -1774,26 +1773,20 @@ def render_quantum_terminal():
 
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
-        # 4) TP / SL ÖZET KARTLARI
+        # 4) TP / SL ÖZET KARTLARI — Min/Max ayrımı kaldırıldı, hesaplanan tek TP değeri gösteriliyor
+        # (yüksek ihtimalli/gerçekçi hedef olan min_tp_price esas alınıyor; max_tp_price artık ayrı bir
+        # kart olarak gösterilmiyor).
         total_pos_size = margin_budget * selected_leverage
-        tp1, tp2, tp3 = st.columns(3)
+        tp1, tp2 = st.columns(2)
         with tp1:
             st.markdown(f"""
             <div class="tp-sl-card min">
-                <div class="tp-sl-label">🟢 MİN KAZANÇ (R:R 1:{risk['rr_min']:.2f})</div>
+                <div class="tp-sl-label">🎯 KÂR AL (TP) — R:R 1:{risk['rr_min']:.2f}</div>
                 <div class="tp-sl-value">{fmt(risk['min_tp_price'])}</div>
                 <div class="tp-sl-sub">+%{risk['actual_min_pct']:.2f} (ROE +%{risk['actual_min_roe']:.1f}) &nbsp;•&nbsp; +${risk['min_profit_usd']:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
         with tp2:
-            st.markdown(f"""
-            <div class="tp-sl-card max">
-                <div class="tp-sl-label">🚀 MAX KAZANÇ (R:R 1:{risk['rr_max']:.2f})</div>
-                <div class="tp-sl-value">{fmt(risk['max_tp_price'])}</div>
-                <div class="tp-sl-sub">+%{risk['actual_max_pct']:.2f} (ROE +%{risk['actual_max_roe']:.1f}) &nbsp;•&nbsp; +${risk['max_profit_usd']:,.2f}</div>
-            </div>
-            """, unsafe_allow_html=True)
-        with tp3:
             st.markdown(f"""
             <div class="tp-sl-card sl">
                 <div class="tp-sl-label">🛑 STOP-LOSS</div>
