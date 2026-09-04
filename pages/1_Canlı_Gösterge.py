@@ -1524,14 +1524,14 @@ st.title("⚡ Analiz Tahmini")
 
 # Entegre Coin ve Canlı Yapay Zeka Analiz Durumu Kartı
 st.markdown(f"""
-<div style="background:#0b1120; border:1px solid #1e293b; padding:10px 16px; border-radius:8px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+<div style="background:#ffffff; box-shadow:0 4px 14px rgba(15,43,46,0.06); padding:10px 16px; border-radius:14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
     <div>
-        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🌐 {selected_exchange_label} Entegreli Toplam İşlem Çifti Sayısı:</span>
-        <div style="font-size:18px; font-weight:900; color:#38bdf8;">{total_coin_count} / {total_coin_count} İşlem Çifti <span style="font-size:12px; color:#10b981; font-weight:bold;">(%100 Tam Borsa Entegre)</span></div>
+        <span style="font-size:11px; color:#5f7d7a; text-transform:uppercase; font-weight:bold;">🌐 {selected_exchange_label} Entegreli Toplam İşlem Çifti Sayısı:</span>
+        <div style="font-size:18px; font-weight:900; color:#0e7490;">{total_coin_count} / {total_coin_count} İşlem Çifti <span style="font-size:12px; color:#16a34a; font-weight:bold;">(%100 Tam Borsa Entegre)</span></div>
     </div>
     <div style="text-align:right;">
-        <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🤖 Anlık Canlı Analiz Edilen Coin:</span>
-        <div style="font-size:16px; font-weight:bold; color:#10b981;"><span style="color:#38bdf8;">{symbol_str}</span> Sinyal & Derinlik Analizi Aktif</div>
+        <span style="font-size:11px; color:#5f7d7a; text-transform:uppercase; font-weight:bold;">🤖 Anlık Canlı Analiz Edilen Coin:</span>
+        <div style="font-size:16px; font-weight:bold; color:#16a34a;"><span style="color:#0e7490;">{symbol_str}</span> Sinyal & Derinlik Analizi Aktif</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1738,8 +1738,8 @@ def render_quantum_terminal():
             .tp-sl-value { font-size:22px; font-weight:900; margin-top:5px; }
             .tp-sl-sub { font-size:11px; opacity:0.85; margin-top:5px; }
 
-            .section-header { display:flex; justify-content:space-between; align-items:center; background:#161b2e; border:1px solid #2a2f45; border-radius:10px; padding:10px 16px; margin:6px 0 12px 0; flex-wrap:wrap; gap:8px; }
-            .section-header-title { font-size:12px; font-weight:900; color:#f0fdfa; letter-spacing:0.3px; }
+            .section-header { display:flex; justify-content:space-between; align-items:center; background:#ffffff; box-shadow:0 4px 14px rgba(15,43,46,0.06); border-radius:14px; padding:10px 16px; margin:6px 0 12px 0; flex-wrap:wrap; gap:8px; }
+            .section-header-title { font-size:12px; font-weight:900; color:#0f2b2e; letter-spacing:0.3px; }
             .section-header-badge { font-size:11px; font-weight:800; }
 
             .info-bar { display:flex; justify-content:space-between; align-items:center; background:#ffffff; border-radius:14px; padding:12px 16px; margin-bottom:12px; border-left:4px solid #94a3b8; flex-wrap:wrap; gap:10px; }
@@ -1914,9 +1914,9 @@ def render_quantum_terminal():
             """, unsafe_allow_html=True)
 
         st.markdown(f"""
-        <div style="display:flex; justify-content:space-between; margin-top:12px; padding:10px 16px; border-radius:10px; background:#161b2e; border:1px solid #2a2f45; font-size:12px; color:#cbd5e1; flex-wrap:wrap; gap:8px;">
-            <span>📍 Giriş Fiyatı: <b style="color:#f0fdfa;">{fmt(risk['entry'])}</b></span>
-            <span>💰 Pozisyon: <b style="color:#f0fdfa;">${total_pos_size:,.0f}</b> ({selected_leverage}x, Marjin ${margin_budget:,.0f})</span>
+        <div style="display:flex; justify-content:space-between; margin-top:12px; padding:10px 16px; border-radius:14px; background:#ffffff; box-shadow:0 4px 14px rgba(15,43,46,0.06); font-size:12px; color:#5f7d7a; flex-wrap:wrap; gap:8px;">
+            <span>📍 Giriş Fiyatı: <b style="color:#0f2b2e;">{fmt(risk['entry'])}</b></span>
+            <span>💰 Pozisyon: <b style="color:#0f2b2e;">${total_pos_size:,.0f}</b> ({selected_leverage}x, Marjin ${margin_budget:,.0f})</span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1924,7 +1924,7 @@ def render_quantum_terminal():
         st.markdown(f"""
         <div class="section-header">
             <div class="section-header-title">🏰 UZUN VADELİ MAJÖR DESTEK & DİRENÇ (KADEMELİ S1/S2 - R1/R2)</div>
-            <div class="section-header-badge" style="color:#34d399;">{macro_tf['macro_badge']}</div>
+            <div class="section-header-badge" style="color:#16a34a;">{macro_tf['macro_badge']}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1991,7 +1991,7 @@ def render_quantum_terminal():
         st.markdown(f"""
         <div class="section-header">
             <div class="section-header-title">⚡ SCALP ADAPTASYONU VE 4 SAATLİK (4H) İŞLEM ANALİZİ</div>
-            <div class="section-header-badge" style="color:#38bdf8;">{scalp_badge}</div>
+            <div class="section-header-badge" style="color:#0e7490;">{scalp_badge}</div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -2040,7 +2040,7 @@ def render_quantum_terminal():
         st.markdown(f"""
         <div class="section-header">
             <div class="section-header-title">🔥 LİKİDASYON ISI HARİTASI & AKILLI İZLEYEN STOP</div>
-            <div class="section-header-badge" style="color:{liq_matrix.get("liq_color", "#34d399")};">{liq_matrix.get("liq_badge", "")}</div>
+            <div class="section-header-badge" style="color:{liq_matrix.get("liq_color", "#16a34a")};">{liq_matrix.get("liq_badge", "")}</div>
         </div>
         """, unsafe_allow_html=True)
 
