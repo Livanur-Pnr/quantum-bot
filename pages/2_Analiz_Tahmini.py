@@ -59,19 +59,43 @@ load_dotenv()
 PREMIUM_CSS = """
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800;900&display=swap');
-    .stApp { background-color: #0b0e14; color: #d1d4dc; font-family: 'Inter', sans-serif; }
-    section[data-testid="stSidebar"] { background-color: #131722; border-right: 1px solid #2a2e39; }
-    
+    .stApp { background-color: #eaf6f4; color: #0f2b2e; font-family: 'Inter', sans-serif; }
+    [data-testid="stAppViewContainer"] { background-color: #eaf6f4; }
+    section[data-testid="stSidebar"] { background-color: #eaf6f4 !important; border-right: 1px solid rgba(15,43,46,0.08); }
+    h1, h2, h3, h4, h5, h6, p, span, label, div { color: #0f2b2e; }
+
     .metric-card {
-        background: #131722; border: 1px solid #2a2e39; border-radius: 8px;
-        padding: 12px; margin-bottom: 10px; min-height: 85px;
+        background: #ffffff; border: none; border-radius: 16px;
+        padding: 14px 16px; margin-bottom: 10px; min-height: 85px;
         display: flex; flex-direction: column; justify-content: center;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        box-shadow: 0 4px 14px rgba(15,43,46,0.06);
     }
-    .metric-card h4 { color: #787b86; font-size: 0.65rem; margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .metric-card h4 { color: #5f7d7a; font-size: 0.65rem; margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 0.5px; }
     .metric-card .value { font-size: 1.15rem; font-weight: 800; margin: 0; }
-    
-    .green { color: #22ab94; } .red { color: #f7525f; } .blue { color: #2962ff; } .white { color: #d1d4dc; }
+
+    .green { color: #16a34a; } .red { color: #dc2626; } .blue { color: #0e7490; } .white { color: #0f2b2e; }
+
+    /* --- Sidebar: teal/turuncu gradyanlı "Vivid Fintech" teması (Analiz Tahmini sayfasıyla tutarlı) --- */
+    [data-testid="stSidebarNavLink"] { border-radius:999px !important; margin-bottom:6px !important; }
+    [data-testid="stSidebarNavLink"] p, [data-testid="stSidebarNavLink"] span { color:#0f2b2e !important; }
+    [data-testid="stSidebarNavLink"]:not([aria-current="page"]) { background:#ffffff !important; }
+    [data-testid="stSidebarNavLink"][aria-current="page"] { background:linear-gradient(135deg, #2dd4bf, #14b8a6) !important; }
+    [data-testid="stSidebarNavLink"][aria-current="page"] p, [data-testid="stSidebarNavLink"][aria-current="page"] span { color:#ffffff !important; }
+
+    [data-testid="stSidebar"] [data-testid="stSelectbox"] > div > div,
+    [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div,
+    [data-testid="stSidebar"] [data-testid="stNumberInput"] > div > div,
+    [data-testid="stSidebar"] [data-testid="stSlider"] {
+        background: linear-gradient(90deg, rgba(45,212,191,0.22), rgba(251,146,60,0.22)) !important;
+        border-radius: 999px !important;
+        border: 1px solid rgba(15,43,46,0.10) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stExpander"] {
+        background: #ffffff !important;
+        border-radius: 16px !important;
+        border: 1px solid rgba(15,43,46,0.08) !important;
+    }
+    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2 { font-size:16px; font-weight:900; color:#0f2b2e; }
 
     /* --- Yenilemede yanip sonme (flas) fix: fragment run_every yenilemesinde
        Streamlit'in "eskimis/stale" iceriği soluklastirip iskelet animasyonu gostermesi
@@ -462,6 +486,36 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
 
 def format_price(p): return f"{p:.4f}" if p < 10 else f"{p:.2f}"
 
+
+def _build_sparkline_svg(prices, width: int = 500, height: int = 60, line_color: str = "#16a34a") -> str:
+    """Küçük, saf SVG bir fiyat mini-grafiği üretir (İZLEMEDE/SİNYAL kartının içine gömülür).
+
+    Bilinçli olarak st.plotly_chart KULLANILMIYOR: bu kart @st.fragment(run_every=...) içinde
+    her birkaç saniyede bir yeniden çiziliyor; ayrı bir Plotly bileşeni burada da (1. sayfadaki
+    hero kartla aynı nedenle) remount/flash sorununa yol açardı. Düz SVG, aynı st.markdown
+    bloğunun bir parçası olduğu için bu sorunu hiç yaşamıyor.
+    """
+    prices = [float(p) for p in prices if pd.notna(p)]
+    n = len(prices)
+    if n < 2:
+        return ""
+    p_min, p_max = min(prices), max(prices)
+    p_range = max(p_max - p_min, 1e-9)
+    pad = 6
+    usable_h = height - pad * 2
+    pts = []
+    for i, p in enumerate(prices):
+        x = (i / (n - 1)) * width
+        y = pad + (1 - (p - p_min) / p_range) * usable_h
+        pts.append((x, y))
+    line_path = "M " + " L ".join(f"{x:.2f},{y:.2f}" for x, y in pts)
+    parts = [
+        f'<svg viewBox="0 0 {width} {height}" width="100%" height="{height}" preserveAspectRatio="none" style="display:block; margin-top:12px;">',
+        f'<path d="{line_path}" fill="none" stroke="{line_color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>',
+        '</svg>',
+    ]
+    return "".join(parts)
+
 # ─────────────────────────────────────────────────────────────────
 # 3.5 CANLI GRAFIK IÇIN ARKA PLAN VERİ SUNUCUSU (FLAŞ FIX - MİMARİ DEĞİŞİKLİĞİ)
 # ─────────────────────────────────────────────────────────────────
@@ -543,12 +597,12 @@ def render_live_chart_component(chart_key: str, height: int = 850) -> None:
     # yukleniyor metni AYRI, Plotly div'inin UZERINE bindirilen bir katmanda gosteriliyor;
     # Plotly'nin kendi div'i (live-plotly-chart) hicbir zaman flex/center stili almiyor.
     html = f"""
-    <style>html,body{{margin:0;padding:0;background:#0b0e14;}}</style>
-    <div style="position:relative; width:100%; height:{height}px;">
+    <style>html,body{{margin:0;padding:0;background:#ffffff;}}</style>
+    <div style="position:relative; width:100%; height:{height}px; background:#ffffff; border-radius:20px; overflow:hidden;">
         <div id="live-plotly-chart" style="width:100%; height:100%;"></div>
         <div id="live-plotly-loading" style="position:absolute; inset:0; display:flex;
-             align-items:center; justify-content:center; color:#94a3b8;
-             font-family:'Inter',sans-serif; font-size:13px; background:#0b0e14; pointer-events:none;">
+             align-items:center; justify-content:center; color:#5f7d7a;
+             font-family:'Inter',sans-serif; font-size:13px; background:#ffffff; pointer-events:none;">
              Grafik yükleniyor…
         </div>
     </div>
@@ -627,7 +681,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], increasing_line_color="#22ab94", decreasing_line_color="#f7525f", increasing_fillcolor="#22ab94", decreasing_fillcolor="#f7525f", name="Fiyat"), row=1, col=1)
     fig.add_trace(go.Scattergl(x=df.index, y=df['prob_long'], mode='lines', line=dict(color='#22ab94', width=2), name='LONG %', fill='tozeroy', fillcolor='rgba(34, 171, 148, 0.1)'), row=2, col=1)
     fig.add_trace(go.Scattergl(x=df.index, y=df['prob_short'], mode='lines', line=dict(color='#f7525f', width=2), name='SHORT %', fill='tozeroy', fillcolor='rgba(247, 82, 95, 0.1)'), row=2, col=1)
-    fig.add_hline(y=threshold, line_dash="dot", line_color="#d1d4dc", opacity=0.7, row=2, col=1)
+    fig.add_hline(y=threshold, line_dash="dot", line_color="#5f7d7a", opacity=0.7, row=2, col=1)
 
     # ONEMLI: Asagida ALTTAKI "Gecmis Islem Sinyalleri Kayit Defteri" tablosuyla AYNI
     # entries_df kullanilir - boylece grafikte gorunen isaretler ile tablodaki satirlar
@@ -736,7 +790,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
         for xi, yi, prob, tp_v, sl_v, ay_off in list(zip(long_e.index, long_y, long_e["prob_long"], long_e["active_tp"], long_e["active_sl"], long_offsets))[:MAX_ENTRY_ANNOTATIONS]:
             if xi in box_index_set:
                 box_text = f"<b>AI LONG</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
-                fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(34,197,94,0.14)", bordercolor="rgba(34,197,94,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#16a34a", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#14532d"), align="left", bgcolor="rgba(34,197,94,0.18)", bordercolor="rgba(22,163,74,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
             else:
                 fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#22c55e", ax=0, ay=15, standoff=1, row=1, col=1)
             _entry_annotations_used += 1
@@ -746,7 +800,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
         for xi, yi, prob, tp_v, sl_v, ay_off in list(zip(short_e.index, short_y, short_e["prob_short"], short_e["active_tp"], short_e["active_sl"], short_offsets))[:max(0, MAX_ENTRY_ANNOTATIONS - _entry_annotations_used)]:
             if xi in box_index_set:
                 box_text = f"<b>AI SHORT</b> | %{prob:.1f}<br>TP: {format_price(tp_v)} | SL: {format_price(sl_v)}"
-                fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#d1d4dc"), align="left", bgcolor="rgba(239,68,68,0.14)", bordercolor="rgba(239,68,68,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
+                fig.add_annotation(x=xi, y=yi, text=box_text, showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=1.3, arrowcolor="#dc2626", ax=0, ay=ay_off, standoff=2, font=dict(size=9, color="#7f1d1d"), align="left", bgcolor="rgba(239,68,68,0.18)", bordercolor="rgba(220,38,38,0.9)", borderwidth=1, borderpad=3, row=1, col=1)
             else:
                 fig.add_annotation(x=xi, y=yi, text="", showarrow=True, arrowhead=1, arrowsize=1.4, arrowwidth=1.3, arrowcolor="#ef4444", ax=0, ay=-15, standoff=1, row=1, col=1)
             _entry_annotations_used += 1
@@ -802,7 +856,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
         bg_color, text_color, dash_style, line_width = color, "white", "solid", 3
     else:
         label_text = f"<b>⏳ CANLI TAHMİN: {'LONG' if is_long else 'SHORT'}</b><br>%{live_prob:.1f} (Eşik Altı)"
-        bg_color, text_color, dash_style, line_width = "rgba(0,0,0,0.6)", color, "dot", 1
+        bg_color, text_color, dash_style, line_width = color, "white", "dot", 1
 
     fig.add_shape(type="line", x0=last_idx, y0=live_tp, x1=future_idx, y1=live_tp, line=dict(color=color, dash=dash_style, width=line_width), row=1, col=1)
     fig.add_shape(type="line", x0=last_idx, y0=last['close'], x1=future_idx, y1=live_tp, line=dict(color=color, dash="dot", width=1), opacity=0.5, row=1, col=1)
@@ -810,9 +864,9 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
 
     # ONEMLI - AKICI ETKILESIM: dragmode="pan" ile fare ile SURUKLEYINCE grafik kayar (borsa
     # arayuzlerindeki gibi); tekerlekle yakinlastirma (scrollZoom) JS tarafinda aciktir.
-    fig.update_layout(template="plotly_dark", paper_bgcolor="#0b0e14", plot_bgcolor="#0b0e14", height=850, margin=dict(l=10, r=70, t=48, b=20), hovermode="x unified", showlegend=False, xaxis_rangeslider_visible=False, dragmode="pan")
-    fig.update_xaxes(gridcolor="#1c212d", zeroline=False, showspikes=True, spikecolor="#2a2e39", rangebreaks=[])
-    fig.update_yaxes(gridcolor="#1c212d", zeroline=False, side="right")
+    fig.update_layout(template="plotly_white", paper_bgcolor="#ffffff", plot_bgcolor="#ffffff", height=850, margin=dict(l=10, r=70, t=48, b=20), hovermode="x unified", showlegend=False, xaxis_rangeslider_visible=False, dragmode="pan")
+    fig.update_xaxes(gridcolor="#e5e7eb", zeroline=False, showspikes=True, spikecolor="#94a3b8", rangebreaks=[])
+    fig.update_yaxes(gridcolor="#e5e7eb", zeroline=False, side="right")
     fig.update_yaxes(range=[0, 100], row=2, col=1)
 
     # Y ekseni de sadece gorunen pencereye gore olceklenir; aksi halde tum gecmisin fiyat
@@ -913,15 +967,19 @@ def main():
         with c8: st.markdown(f'<div class="metric-card" title="{", ".join(active_features)}"><h4>📊 AKTİF FEATURE</h4><p class="value blue">{len(active_features)} Özellik (Filtreli)</p></div>', unsafe_allow_html=True)
         
         if live_prob >= ai_threshold:
-            stat_html = f'''<div class="metric-card" style="border-color:{live_color}; background:rgba({34 if is_long else 247},{171 if is_long else 82},{148 if is_long else 95},0.15); text-align:center; padding: 20px;">
+            stat_sparkline = _build_sparkline_svg(df['close'].tail(80).tolist(), line_color=live_color)
+            stat_html = f'''<div class="metric-card" style="border:1px solid {live_color}; background:rgba({34 if is_long else 220},{171 if is_long else 38},{148 if is_long else 38},0.08); text-align:center; padding: 20px;">
                 <h2 style="color:{live_color}; margin:0; font-weight:900; font-size:1.8rem;">🚀 SİNYAL ONAYLANDI! ŞİMDİ İŞLEME GİR! ({live_dir})</h2>
-                <div style="margin-top:15px; font-size:1.4rem; font-weight:800; color:#d1d4dc;">Giriş: <span style="color:#ffffff">{format_price(last_price)}</span> &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color:#22ab94">TP: {format_price(live_tp)}</span> &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color:#f7525f">SL: {format_price(live_sl)}</span></div>
-                <p style="margin:10px 0 0 0; color:{live_color}; font-size:1.1rem; font-weight:600;">🤖 KURUMSAL ML GÜVENİ: %{live_prob:.1f}</p></div>'''
+                <div style="margin-top:15px; font-size:1.4rem; font-weight:800; color:#0f2b2e;">Giriş: <span style="color:#0f2b2e">{format_price(last_price)}</span> &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color:#16a34a">TP: {format_price(live_tp)}</span> &nbsp;&nbsp;|&nbsp;&nbsp; <span style="color:#dc2626">SL: {format_price(live_sl)}</span></div>
+                <p style="margin:10px 0 0 0; color:{live_color}; font-size:1.1rem; font-weight:600;">🤖 KURUMSAL ML GÜVENİ: %{live_prob:.1f}</p>
+                {stat_sparkline}</div>'''
         else:
-            stat_html = f'''<div class="metric-card" style="border-color:#434651; background:rgba(67, 70, 81, 0.1); text-align:center; padding: 15px;">
-                <h3 style="color:#787b86; margin:0; font-weight:800; font-size:1.3rem;">⏳ İZLEMEDE (Eşik Altı) - Şu an işleme GİRME.</h3>
-                <p style="color:#787b86; font-size:1.0rem; margin-top:10px; margin-bottom:5px;">Beklenen Yön: <b style="color:{live_color}">{live_dir}</b> (Güven: %{live_prob:.1f})</p>
-                <p style="color:#5d606b; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p></div>'''
+            stat_sparkline = _build_sparkline_svg(df['close'].tail(80).tolist(), line_color=live_color)
+            stat_html = f'''<div class="metric-card" style="border:1px solid rgba(15,43,46,0.10); background:#ffffff; text-align:center; padding: 15px;">
+                <h3 style="color:#5f7d7a; margin:0; font-weight:800; font-size:1.3rem;">⏳ İZLEMEDE (Eşik Altı) - Şu an işleme GİRME.</h3>
+                <p style="color:#5f7d7a; font-size:1.0rem; margin-top:10px; margin-bottom:5px;">Beklenen Yön: <b style="color:{live_color}">{live_dir}</b> (Güven: %{live_prob:.1f})</p>
+                <p style="color:#5f7d7a; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p>
+                {stat_sparkline}</div>'''
         st.markdown(stat_html, unsafe_allow_html=True)
     
         # ONEMLI: Grafikteki isaretler ile alttaki "Gecmis Islem Sinyalleri Kayit Defteri"
@@ -973,7 +1031,7 @@ def main():
                 display_rows.append({
                     "Tarih / Saat": idx.strftime("%Y-%m-%d %H:%M") if hasattr(idx, "strftime") else str(idx),
                     "Yön": "🟢 LONG" if is_long_row else "🔴 SHORT",
-                    "Güven": f"%{conf:.1f}",
+                    "Güven": round(float(conf), 1),
                     "Giriş": format_price(row["close"]),
                     "TP": format_price(row["active_tp"]),
                     "SL": format_price(row["active_sl"]),
@@ -994,6 +1052,9 @@ def main():
                 on_select="rerun",
                 selection_mode="single-row",
                 key=f"entries_table_{symbol}_{tf}",
+                column_config={
+                    "Güven": st.column_config.ProgressColumn("Güven", format="%.1f%%", min_value=0, max_value=100),
+                },
             )
 
             sel_rows = []
@@ -1023,18 +1084,18 @@ def main():
         final_cd = table_cd
         if final_cd:
             ts_c, dir_c, conf_c, entry_c, tp_c, sl_c = final_cd[:6]
-            dir_color_c = "#22ab94" if dir_c == "LONG" else "#f7525f"
+            dir_color_c = "#16a34a" if dir_c == "LONG" else "#dc2626"
             dir_label_c = "🟢 LONG" if dir_c == "LONG" else "🔴 SHORT"
             st.markdown(f"""
-            <div style="background:#131722; border:2px solid {dir_color_c}; border-radius:10px; padding:16px 20px; margin-top:10px;">
-                <div style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold; margin-bottom:10px;">🔎 Seçilen Sinyal Detayı</div>
+            <div style="background:#ffffff; border:2px solid {dir_color_c}; border-radius:16px; padding:16px 20px; margin-top:10px; box-shadow:0 4px 14px rgba(15,43,46,0.06);">
+                <div style="font-size:11px; color:#5f7d7a; text-transform:uppercase; font-weight:bold; margin-bottom:10px;">🔎 Seçilen Sinyal Detayı</div>
                 <div style="display:flex; flex-wrap:wrap; gap:28px; align-items:center;">
-                    <div><span style="color:#787b86; font-size:11px;">YÖN</span><br><b style="color:{dir_color_c}; font-size:15px;">{dir_label_c}</b></div>
-                    <div><span style="color:#787b86; font-size:11px;">ZAMAN</span><br><b style="color:#d1d4dc; font-size:15px;">{ts_c}</b></div>
-                    <div><span style="color:#787b86; font-size:11px;">GÜVEN</span><br><b style="color:#d1d4dc; font-size:15px;">%{conf_c}</b></div>
-                    <div><span style="color:#787b86; font-size:11px;">GİRİŞ</span><br><b style="color:#d1d4dc; font-size:15px;">{entry_c}</b></div>
-                    <div><span style="color:#787b86; font-size:11px;">TP</span><br><b style="color:#22ab94; font-size:15px;">{tp_c}</b></div>
-                    <div><span style="color:#787b86; font-size:11px;">SL</span><br><b style="color:#f7525f; font-size:15px;">{sl_c}</b></div>
+                    <div><span style="color:#5f7d7a; font-size:11px;">YÖN</span><br><b style="color:{dir_color_c}; font-size:15px;">{dir_label_c}</b></div>
+                    <div><span style="color:#5f7d7a; font-size:11px;">ZAMAN</span><br><b style="color:#0f2b2e; font-size:15px;">{ts_c}</b></div>
+                    <div><span style="color:#5f7d7a; font-size:11px;">GÜVEN</span><br><b style="color:#0f2b2e; font-size:15px;">%{conf_c}</b></div>
+                    <div><span style="color:#5f7d7a; font-size:11px;">GİRİŞ</span><br><b style="color:#0f2b2e; font-size:15px;">{entry_c}</b></div>
+                    <div><span style="color:#5f7d7a; font-size:11px;">TP</span><br><b style="color:#16a34a; font-size:15px;">{tp_c}</b></div>
+                    <div><span style="color:#5f7d7a; font-size:11px;">SL</span><br><b style="color:#dc2626; font-size:15px;">{sl_c}</b></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
