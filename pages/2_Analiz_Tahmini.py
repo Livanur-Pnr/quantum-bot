@@ -54,9 +54,6 @@ st.set_page_config(
     initial_sidebar_state="expanded", 
 )
 
-if "balance" not in st.session_state: st.session_state.balance = 10000.0 
-if "position" not in st.session_state: st.session_state.position = None
-
 load_dotenv()
 
 PREMIUM_CSS = """
@@ -845,14 +842,6 @@ def main():
             tp_m = st.slider("TP Çarpanı (ATR)", 1.0, 8.0, 4.0, 0.5)
             sl_m = st.slider("SL Çarpanı (ATR)", 0.5, 4.0, 1.5, 0.1)
 
-        st.markdown("---")
-        # ONEMLI: Fragment (otomatik yenilenen bolum) icinde dogrudan "with st.sidebar:"
-        # acilirsa Streamlit hata verir (StreamlitAPIException) - cunku o pozisyon tam
-        # (fragment disi) calistirmada rezerve edilmemis olur. Bunun yerine burada, tam
-        # calistirma sirasinda bos bir yer (.empty()) ayirip, fragment icinde sadece bu
-        # yerin icini dolduruyoruz.
-        paper_trade_slot = st.empty()
-
     # ONEMLI - FLAS FIX MİMARİSİ: Grafik artik fragment'in ICINDE degil, burada (main() icinde,
     # sadece coin/zaman dilimi degisince dogal olarak yeniden calisan bolumde) TEK SEFERLIK
     # kuruluyor. Fragment (asagida) artik grafigi DOGRUDAN cizmiyor; sadece arka plandaki hafif
@@ -904,34 +893,6 @@ def main():
         # ONAYLANDI" kutusu, mum kapanana kadar sabit kalir - saniyeler icinde sicramaz.
         stable_row = df.iloc[-2] if len(df) > 1 else last
 
-        with paper_trade_slot.container():
-            st.markdown("## 💸 SANAL İŞLEM (PAPER TRADING)")
-            if st.session_state.position is None:
-                st.markdown(f"**💰 Cüzdan Bakiyesi:** <span style='color:#22ab94'>${st.session_state.balance:,.2f}</span>", unsafe_allow_html=True)
-                with st.form("paper_trade_form"):
-                    trade_qty = st.number_input("Miktar (Coin Adedi)", min_value=0.001, value=0.1, step=0.01)
-                    st.markdown(f"<small>İşlem Bedeli: ${(trade_qty * last_price):,.2f}</small>", unsafe_allow_html=True)
-                    c_b, c_s = st.columns(2)
-                    if c_b.form_submit_button("🟢 AL (LONG)"):
-                        if trade_qty * last_price <= st.session_state.balance:
-                            st.session_state.position = {'side': 'LONG', 'entry': last_price, 'qty': trade_qty, 'symbol': symbol}
-                            st.rerun()
-                    if c_s.form_submit_button("🔴 SAT (SHORT)"):
-                        if trade_qty * last_price <= st.session_state.balance:
-                            st.session_state.position = {'side': 'SHORT', 'entry': last_price, 'qty': trade_qty, 'symbol': symbol}
-                            st.rerun()
-            else:
-                pos = st.session_state.position
-                live_pnl = (last_price - pos['entry']) * pos['qty'] if pos['side'] == 'LONG' else (pos['entry'] - last_price) * pos['qty']
-                # ONEMLI: Ayni markdown cagrisinda 2+ tane duz "$" (dolar) isareti olursa,
-                # Streamlit aralarini LaTeX matematik modu sanip HTML/markdown'i bozuyor.
-                # Bu yuzden dolar isaretleri "\$" olarak kacisli (escaped) kullaniliyor.
-                st.markdown(f"**Açık İşlem:** {pos['side']} {pos['symbol']}<br>**Giriş:** \\${pos['entry']:,.2f}<br>**Canlı PnL:** <span style='color:{'#22ab94' if live_pnl>=0 else '#f7525f'}; font-size:1.2rem; font-weight:bold'>\\${live_pnl:,.2f}</span>", unsafe_allow_html=True)
-                if st.button("❌ Pozisyonu Kapat", use_container_width=True):
-                    st.session_state.balance += live_pnl
-                    st.session_state.position = None
-                    st.rerun()
-        
         is_long = stable_row["prob_long"] > stable_row["prob_short"]
         live_prob, live_dir = (stable_row["prob_long"], "LONG") if is_long else (stable_row["prob_short"], "SHORT")
         live_color = "#22ab94" if is_long else "#f7525f"
@@ -940,11 +901,10 @@ def main():
         live_tp = last_price + live_tp_dist if is_long else last_price - live_tp_dist
         live_sl = last_price - live_sl_dist if is_long else last_price + live_sl_dist
     
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3 = st.columns(3)
         with c1: st.markdown(f'<div class="metric-card"><h4>💰 {symbol} FİYAT</h4><p class="value white">${last_price:,.4f}</p></div>', unsafe_allow_html=True)
         with c2: st.markdown(f'<div class="metric-card"><h4>🟢 CANLI LONG %</h4><p class="value green">%{stable_row["prob_long"]:.1f}</p></div>', unsafe_allow_html=True)
         with c3: st.markdown(f'<div class="metric-card"><h4>🔴 CANLI SHORT %</h4><p class="value red">%{stable_row["prob_short"]:.1f}</p></div>', unsafe_allow_html=True)
-        with c4: st.markdown(f'<div class="metric-card" style="border-color:#2962ff"><h4>💸 SANAL PORTFÖY</h4><p class="value white">${st.session_state.balance:,.0f}</p></div>', unsafe_allow_html=True)
             
         c5, c6, c7, c8 = st.columns(4)
         with c5: st.markdown(f'<div class="metric-card"><h4>🧠 Eğitim Seti Doğruluğu</h4><p class="value blue">%{train_acc:.1f}</p></div>', unsafe_allow_html=True)
