@@ -1315,7 +1315,7 @@ with st.sidebar:
         [data-testid="stSidebar"] [data-testid="stSelectbox"] input,
         [data-testid="stSidebar"] [data-testid="stTextInput"] input,
         [data-testid="stSidebar"] [data-testid="stNumberInput"] input {
-            font-weight:900 !important; color:#0f2b2e !important; font-size:16px !important;
+            font-weight:800 !important; color:#0f2b2e !important; font-size:14.5px !important;
         }
         [data-testid="stSidebar"] [data-testid="stTextInput"] input::placeholder { font-weight:500 !important; color:#5f7d7a !important; }
 
