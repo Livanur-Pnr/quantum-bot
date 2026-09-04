@@ -65,11 +65,13 @@ PREMIUM_CSS = """
     /* --- Sidebar kartı & form alanları --- */
     .sb-section-title { font-size:16px; font-weight:900; color:#0f2b2e; margin:14px 0 10px 0; }
     .st-key-haber_kontrol_card { background:#ffffff; border-radius:18px; padding:16px 16px 8px 16px; box-shadow:0 4px 14px rgba(15,43,46,0.06); margin-bottom:14px; }
-    [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div {
-        background:#ffffff !important; border-radius:12px !important; border:1.5px solid rgba(15,43,46,0.12) !important;
+    .st-key-haber_kontrol_card [data-testid="stWidgetLabel"] p { font-weight:800 !important; color:#0f2b2e !important; font-size:13px !important; }
+    .st-key-haber_kontrol_card [data-testid="stTextInput"] > div > div {
+        background:#f1f5f9 !important; border-radius:999px !important; border:1.5px solid transparent !important;
     }
-    [data-testid="stSidebar"] [data-testid="stTextInput"] input:focus { border-color:#14b8a6 !important; }
-    [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div:focus-within { border-color:#14b8a6 !important; box-shadow:0 0 0 2px rgba(20,184,166,0.15) !important; }
+    .st-key-haber_kontrol_card [data-testid="stTextInput"] input { color:#0f2b2e !important; }
+    .st-key-haber_kontrol_card [data-testid="stTextInput"] input:focus { border-color:#14b8a6 !important; }
+    .st-key-haber_kontrol_card [data-testid="stTextInput"] > div > div:focus-within { border-color:#14b8a6 !important; background:#ffffff !important; box-shadow:0 0 0 2px rgba(20,184,166,0.15) !important; }
     [data-testid="stSidebar"] [data-testid="stSliderTickBarMin"], [data-testid="stSidebar"] [data-testid="stSliderTickBarMax"] { color:#5f7d7a !important; }
     [data-testid="stSidebar"] [data-baseweb="slider"] [role="slider"] { background-color:#0e7490 !important; }
     [data-testid="stSidebar"] [data-baseweb="slider"] div[style*="background-color: rgb(255, 75, 75)"] { background:#14b8a6 !important; }
@@ -100,16 +102,22 @@ if "news_summary_cache" not in st.session_state:
 # SIDEBAR — KONTROLLER
 # ─────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("<div class='sb-section-title'>Haber Kontrolleri</div>", unsafe_allow_html=True)
     with st.container(key="haber_kontrol_card"):
+        st.markdown("""
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <span style="font-size:19px; font-weight:900; color:#0f2b2e;">Haber Kontrolleri</span>
+            <span style="width:20px; height:20px; border-radius:50%; border:1.5px solid #94a3b8; color:#5f7d7a;
+                         font-size:11px; font-weight:800; display:flex; align-items:center; justify-content:center;">?</span>
+        </div>
+        """, unsafe_allow_html=True)
         coin_filter = st.text_input(
-            "Coin filtrele (örn: BTC,ETH)",
+            "Coin Filtrele (örn: BTC, ETH)",
             value="",
-            placeholder="Örn: BTC, ETH",
+            placeholder="🔍  Örn: BTC, ETH",
             help="Boş bırakırsan tüm kripto haberleri gösterilir. Başlık/özet içinde geçen coin adına göre filtrelenir.",
         )
-        max_news = st.slider("Gösterilecek haber sayısı", min_value=3, max_value=15, value=8)
-        refresh_seconds = st.slider("Otomatik yenileme (saniye)", min_value=60, max_value=600, value=180, step=30)
+        max_news = st.slider("Gösterilecek haber sayısı", min_value=3, max_value=15, value=8, help="Bir seferde en fazla kaç haber gösterilsin.")
+        refresh_seconds = st.slider("Otomatik yenileme (saniye)", min_value=60, max_value=600, value=180, step=30, help="Haber listesi kaç saniyede bir otomatik yenilensin.")
 
     st.caption("Haber kaynağı: " + ", ".join(RSS_FEEDS.keys()))
     if not GEMINI_API_KEY:
