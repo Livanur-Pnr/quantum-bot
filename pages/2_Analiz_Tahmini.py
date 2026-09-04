@@ -1036,7 +1036,12 @@ def main():
         # yeniden hesaplandigi icin, yeni bir giris sinyali olustugunda otomatik olarak en üste
         # eklenip gorunur.
         st.markdown("---")
-        st.markdown("## 📜 Geçmiş İşlem Sinyalleri Kayıt Defteri")
+        st.markdown("""
+        <div class="page-header-bar">
+            <div class="page-header-icon">📜</div>
+            <div class="page-header-title">Geçmiş İşlem Sinyalleri Kayıt Defteri</div>
+        </div>
+        """, unsafe_allow_html=True)
 
         table_cd = None
         if not entries_df.empty:
