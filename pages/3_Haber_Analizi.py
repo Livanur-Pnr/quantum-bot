@@ -64,6 +64,7 @@ PREMIUM_CSS = """
 
     /* --- Sidebar kartı & form alanları --- */
     .sb-section-title { font-size:16px; font-weight:900; color:#0f2b2e; margin:14px 0 10px 0; }
+    .st-key-haber_kontrol_card { background:#ffffff; border-radius:18px; padding:16px 16px 8px 16px; box-shadow:0 4px 14px rgba(15,43,46,0.06); margin-bottom:14px; }
     [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div {
         background:#ffffff !important; border-radius:12px !important; border:1.5px solid rgba(15,43,46,0.12) !important;
     }
@@ -100,16 +101,16 @@ if "news_summary_cache" not in st.session_state:
 # ─────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("<div class='sb-section-title'>Haber Kontrolleri</div>", unsafe_allow_html=True)
-    coin_filter = st.text_input(
-        "Coin filtrele (örn: BTC,ETH)",
-        value="",
-        placeholder="Örn: BTC, ETH",
-        help="Boş bırakırsan tüm kripto haberleri gösterilir. Başlık/özet içinde geçen coin adına göre filtrelenir.",
-    )
-    max_news = st.slider("Gösterilecek haber sayısı", min_value=3, max_value=15, value=8)
-    refresh_seconds = st.slider("Otomatik yenileme (saniye)", min_value=60, max_value=600, value=180, step=30)
+    with st.container(key="haber_kontrol_card"):
+        coin_filter = st.text_input(
+            "Coin filtrele (örn: BTC,ETH)",
+            value="",
+            placeholder="Örn: BTC, ETH",
+            help="Boş bırakırsan tüm kripto haberleri gösterilir. Başlık/özet içinde geçen coin adına göre filtrelenir.",
+        )
+        max_news = st.slider("Gösterilecek haber sayısı", min_value=3, max_value=15, value=8)
+        refresh_seconds = st.slider("Otomatik yenileme (saniye)", min_value=60, max_value=600, value=180, step=30)
 
-    st.markdown("---")
     st.caption("Haber kaynağı: " + ", ".join(RSS_FEEDS.keys()))
     if not GEMINI_API_KEY:
         st.markdown("<div class='gemini-status-pill missing'>⚠️ Gemini API anahtarı eksik</div>", unsafe_allow_html=True)
@@ -276,6 +277,7 @@ def render_news_panel():
 
         badge_color = {"LONG": "#16a34a", "SHORT": "#dc2626", "NOTR": "#5f7d7a"}[summary["yon"]]
         badge_bg = {"LONG": "#dcfce7", "SHORT": "#fee2e2", "NOTR": "#f1f5f9"}[summary["yon"]]
+        card_tint = {"LONG": "rgba(34,197,94,0.07)", "SHORT": "rgba(239,68,68,0.07)", "NOTR": "rgba(100,116,139,0.05)"}[summary["yon"]]
         badge_text = {
             "LONG": "LONG EĞİLİMİ OLASI",
             "SHORT": "SHORT EĞİLİMİ OLASI",
@@ -290,7 +292,7 @@ def render_news_panel():
         safe_url = url if url.startswith(("http://", "https://")) else "#"
 
         st.markdown(f"""
-        <div style="background:#ffffff;border-left:4px solid {badge_color};box-shadow:0 4px 14px rgba(15,43,46,0.06);
+        <div style="background:linear-gradient(90deg, {card_tint} 0%, #ffffff 55%);border-left:4px solid {badge_color};box-shadow:0 4px 14px rgba(15,43,46,0.06);
                     border-radius:14px;padding:14px 16px;margin-bottom:12px;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:6px;">
             <span style="color:#5f7d7a;font-size:0.75rem;">{safe_source} · {safe_published}</span>
