@@ -1394,30 +1394,8 @@ with st.sidebar:
     else:
         st.markdown("<div class='sb-warn-card'>⚠️ Private API: BAĞLI DEĞİL (Yalnızca Sinyal Modu)<br><span style='font-weight:400;'>📌 Proje klasörünüzdeki .env dosyasına API anahtarınızı girip kaydedin VEYA yukarıdaki menüye yapıştırın.</span></div>", unsafe_allow_html=True)
 
-    # "Kasa sinirlamasi" sadece butce ust sinirini belirlerken kullanilir; cuzdan bakiyesi
-    # (wallet_balance_val) yine de Sermaye & Kasa Takip Panelinde bilgi amacli gosterilmeye devam eder.
+    # "Kasa sinirlamasi" sadece butce ust sinirini belirlerken kullanilir.
     budget_cap_balance = 0.0 if ignore_wallet_for_budget else wallet_balance_val
-
-    st.markdown("<div class='sb-section-title' style='margin-top:18px;'>💵 Sermaye & Kasa Takip Paneli</div>", unsafe_allow_html=True)
-    initial_capital = st.number_input("Başlangıç Sermayesi ($):", min_value=10.0, max_value=100000.0, value=100.0, step=50.0, help="Botu başlattığınız kasa bütçesi")
-
-    current_kasa = wallet_balance_val if wallet_balance_val > 0 else initial_capital
-    net_pnl = current_kasa - initial_capital
-    net_return_pct = (net_pnl / (initial_capital + 1e-9)) * 100.0
-    pnl_clr = "#059669" if net_pnl >= 0 else "#dc2626"
-
-    st.markdown(f"""
-    <div class="sb-white-card">
-        <div style="display:flex; justify-content:space-between; font-size:12px; color:#5f7d7a;">
-            <span>Güncel Anlık Kasa:</span>
-            <b style="color:#0e7490;">${current_kasa:,.2f} USD</b>
-        </div>
-        <div style="display:flex; justify-content:space-between; font-size:13px; font-weight:bold; margin-top:4px;">
-            <span style="color:#0f2b2e;">Net Kâr/Zarar:</span>
-            <span style="color:{pnl_clr};">{net_pnl:+,.2f} USD (%{net_return_pct:+.1f})</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
 
     # --- COİN & GÖSTERGE KONTROLLERİ (Kullanıcı isteğiyle ana panelden sol menüye taşındı) ---
     st.markdown("<div class='sb-section-title' style='margin-top:18px;'>⚡ Coin & Gösterge Kontrolleri</div>", unsafe_allow_html=True)
