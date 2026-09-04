@@ -1657,6 +1657,25 @@ def render_quantum_terminal():
             .tp-sl-label { font-size:11px; opacity:0.85; font-weight:800; }
             .tp-sl-value { font-size:22px; font-weight:900; margin-top:5px; }
             .tp-sl-sub { font-size:11px; opacity:0.85; margin-top:5px; }
+
+            .section-header { display:flex; justify-content:space-between; align-items:center; background:#161b2e; border:1px solid #2a2f45; border-radius:10px; padding:10px 16px; margin:6px 0 12px 0; flex-wrap:wrap; gap:8px; }
+            .section-header-title { font-size:12px; font-weight:900; color:#f0fdfa; letter-spacing:0.3px; }
+            .section-header-badge { font-size:11px; font-weight:800; }
+
+            .info-bar { display:flex; justify-content:space-between; align-items:center; background:#ffffff; border-radius:14px; padding:12px 16px; margin-bottom:12px; border-left:4px solid #94a3b8; flex-wrap:wrap; gap:10px; }
+            .info-bar-label { font-size:10px; color:#6b7280; text-transform:uppercase; font-weight:800; letter-spacing:0.4px; }
+            .info-bar-value { font-size:15px; font-weight:900; color:#1e1b2e; margin-top:2px; }
+
+            .info-tile { background:#ffffff; border-radius:14px; padding:12px 14px; border-left:4px solid #94a3b8; height:100%; }
+            .info-tile-label { font-size:10px; color:#6b7280; text-transform:uppercase; font-weight:800; margin-bottom:4px; letter-spacing:0.3px; }
+            .info-tile-value { font-size:15px; font-weight:900; color:#1e1b2e; }
+            .info-tile-value-sm { font-size:12px; font-weight:900; color:#1e1b2e; }
+            .info-tile-sub { font-size:11px; color:#6b7280; margin-top:5px; }
+
+            .indicator-chip { background:#ffffff; border-radius:12px; padding:10px 6px; text-align:center; height:100%; }
+            .indicator-chip-title { font-size:9px; color:#6b7280; font-weight:800; text-transform:uppercase; letter-spacing:0.2px; }
+            .indicator-chip-value { font-size:13px; font-weight:900; margin-top:5px; }
+            .indicator-chip-dir { font-size:10px; font-weight:800; margin-top:3px; }
         </style>
         """, unsafe_allow_html=True)
 
@@ -1745,7 +1764,7 @@ def render_quantum_terminal():
                 rows_html += f"""<div class="check-row"><span><b>{name}</b> — {detail}</span><span class="check-badge {badge_cls}">{badge_txt}</span></div>"""
             st.markdown(f"""
             <div class="mini-card">
-                <div class="mini-card-title">🛡️ SAHTE SİNYAL FİLTRE KONTROLLERİ</div>
+                <div class="mini-card-title">🛡️ GÜVENLİK FİLTRE KATMANI</div>
                 {rows_html}
             </div>
             """, unsafe_allow_html=True)
@@ -1803,269 +1822,207 @@ def render_quantum_terminal():
         """, unsafe_allow_html=True)
 
         # --- UZUN VADELİ MAJÖR DESTEK VE DİRENÇ YAPISAL ANALİZ KARTI ---
-        st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
         st.markdown(f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <div class='sub-label'>🏰 UZUN VADELİ MAJÖR DESTEK & DİRENÇ YAPISAL ANALİZİ (KADEMELİ S1/S2 - R1/R2 MATRİSİ)</div>
-            <div style='font-size:12px; font-weight:bold; color:#10b981;'>{macro_tf['macro_badge']}</div>
+        <div class="section-header">
+            <div class="section-header-title">🏰 UZUN VADELİ MAJÖR DESTEK & DİRENÇ (KADEMELİ S1/S2 - R1/R2)</div>
+            <div class="section-header-badge" style="color:#34d399;">{macro_tf['macro_badge']}</div>
         </div>
         """, unsafe_allow_html=True)
-        
-        # 1. Net Yön Analizi ve Vektör Rozeti
-        sr_dir_clr = "#10b981" if "BOUNCE" in sr_levels.get("sr_direction_code", "") or "BREAKOUT" in sr_levels.get("sr_direction_code", "") or "BULL" in sr_levels.get("sr_direction_code", "") else "#ef4444"
+
+        sr_dir_clr = "#16a34a" if "BOUNCE" in sr_levels.get("sr_direction_code", "") or "BREAKOUT" in sr_levels.get("sr_direction_code", "") or "BULL" in sr_levels.get("sr_direction_code", "") else "#dc2626"
         st.markdown(f"""
-        <div style="background:#0b1120; padding:10px 16px; border-radius:8px; border:1px solid {sr_dir_clr}; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+        <div class="info-bar" style="border-left-color:{sr_dir_clr};">
             <div>
-                <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🎯 DESTEK VE DİRENÇ YÖN HESAPLAMASI & TAHMİNİ:</span>
-                <div style="font-size:16px; font-weight:900; color:{sr_dir_clr}; margin-top:2px;">{sr_levels.get('sr_direction', '')}</div>
+                <div class="info-bar-label">🎯 Destek/Direnç Yön Tahmini</div>
+                <div class="info-bar-value" style="color:{sr_dir_clr};">{sr_levels.get('sr_direction', '')}</div>
             </div>
             <div style="text-align:right;">
-                <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">⚖️ Haftalık / Günlük Pivot Denge:</span>
-                <div style="font-size:16px; font-weight:bold; color:#38bdf8;">{fmt(sr_levels.get('pp', 0))}</div>
+                <div class="info-bar-label">⚖️ Haftalık / Günlük Pivot Denge</div>
+                <div class="info-bar-value">{fmt(sr_levels.get('pp', 0))}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
+
         sr1, sr2, sr3 = st.columns([1.3, 1.3, 1.4])
         with sr1:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #10b981;">
-                <div style="font-size:11px; color:#94a3b8;">🛡️ STATİK DESTEK KADEMELERİ</div>
-                <div style="font-size:16px; font-weight:bold; color:#10b981; margin-top:3px;">S1 (Birincil): {fmt(sr_levels.get('s1', 0))}</div>
-                <div style="font-size:13px; color:#64748b; font-weight:bold;">S2 (Derin Dip): {fmt(sr_levels.get('s2', 0))}</div>
-                <div style="font-size:11px; color:#cbd5e1; margin-top:4px;">Fiyata Uzaklık: <b>%{sr_levels.get('dist_sup_pct', 0):.2f}</b></div>
+            <div class="info-tile" style="border-left-color:#16a34a;">
+                <div class="info-tile-label">🛡️ Statik Destek Kademeleri</div>
+                <div class="info-tile-value-sm" style="color:#16a34a;">S1: {fmt(sr_levels.get('s1', 0))}</div>
+                <div class="info-tile-sub">S2 (Derin Dip): {fmt(sr_levels.get('s2', 0))}</div>
+                <div class="info-tile-sub">Fiyata Uzaklık: <b>%{sr_levels.get('dist_sup_pct', 0):.2f}</b></div>
             </div>
             """, unsafe_allow_html=True)
-            
         with sr2:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #ef4444;">
-                <div style="font-size:11px; color:#94a3b8;">🏰 STATİK DİRENÇ KADEMELERİ</div>
-                <div style="font-size:16px; font-weight:bold; color:#ef4444; margin-top:3px;">R1 (Birincil): {fmt(sr_levels.get('r1', 0))}</div>
-                <div style="font-size:13px; color:#64748b; font-weight:bold;">R2 (Zirve): {fmt(sr_levels.get('r2', 0))}</div>
-                <div style="font-size:11px; color:#cbd5e1; margin-top:4px;">Fiyata Uzaklık: <b>%{sr_levels.get('dist_res_pct', 0):.2f}</b></div>
+            <div class="info-tile" style="border-left-color:#dc2626;">
+                <div class="info-tile-label">🏰 Statik Direnç Kademeleri</div>
+                <div class="info-tile-value-sm" style="color:#dc2626;">R1: {fmt(sr_levels.get('r1', 0))}</div>
+                <div class="info-tile-sub">R2 (Zirve): {fmt(sr_levels.get('r2', 0))}</div>
+                <div class="info-tile-sub">Fiyata Uzaklık: <b>%{sr_levels.get('dist_res_pct', 0):.2f}</b></div>
             </div>
             """, unsafe_allow_html=True)
-            
         with sr3:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #38bdf8;">
-                <div style="font-size:11px; color:#94a3b8;">📌 REAKSİYON & STRATEJİ UYARISI</div>
-                <div style="font-size:12px; font-weight:bold; color:#38bdf8; margin-top:4px;">{sr_levels.get('sr_note', '')}</div>
+            <div class="info-tile" style="border-left-color:#8b5cf6;">
+                <div class="info-tile-label">📌 Reaksiyon & Strateji Uyarısı</div>
+                <div class="info-tile-value-sm" style="color:#4c1d95;">{sr_levels.get('sr_note', '')}</div>
             </div>
             """, unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
         # --- SCALP ADAPTASYONU VE 4 SAATLİK (4H) MAKRO TAHMİN KARTI ---
-        st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
         is_scalp_tf = active_interval in ["Min1", "Min5", "Min240"]
-        scalp_badge = "⚡ SCALP / 4H MODU AKTİF (1m/5m/4h Hızlı Reaksiyon & Dar Marjin)" if is_scalp_tf else " SWING / TREND MODU AKTİF (Dengeli Rejim)"
-        
+        scalp_badge = "⚡ SCALP / 4H MODU AKTİF" if is_scalp_tf else "SWING / TREND MODU AKTİF"
+
         scalp_dir = "LONG" if "LONG" in confluence["final_signal"] else ("SHORT" if "SHORT" in confluence["final_signal"] else "NEUTRAL")
         tf4h_dir = ai_4h_pred["direction"]
-        
+
         if scalp_dir == tf4h_dir and scalp_dir != "NEUTRAL":
-            alignment_badge = " %100 YÖN UYUMLU: 1m/5m SCALP YÖNÜ İLE 4H MAKRO TAHMİNİ BİREBİR AYNI (YÜKSEK KAZANÇ İHTİMALİ)"
-            align_clr = "#10b981"
+            alignment_badge = "%100 YÖN UYUMLU: Scalp & 4H Makro Aynı Yönde (Yüksek İhtimal)"
+            align_clr = "#16a34a"
         elif scalp_dir != "NEUTRAL" and tf4h_dir != "NEUTRAL":
-            alignment_badge = " KARŞI TREND SCALP: 1m/5m Scalp Yönü 4H Makro Trendin Tersine! (Hızlı Kâr Alıp Çıkın)"
-            align_clr = "#f59e0b"
+            alignment_badge = "KARŞI TREND SCALP: Scalp Yönü 4H Trendin Tersine!"
+            align_clr = "#d97706"
         else:
             alignment_badge = "⚖️ DENGELİ / NÖTR KOMBİNASYON"
-            align_clr = "#38bdf8"
-            
+            align_clr = "#3b82f6"
+
         st.markdown(f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <div class='sub-label'>⚡ SCALP ADAPTASYONU VE 4 SAATLİK (4H) İŞLEM ANALİZİ & TAHMİNİ</div>
-            <div style='font-size:12px; font-weight:bold; color:#38bdf8;'>{scalp_badge}</div>
+        <div class="section-header">
+            <div class="section-header-title">⚡ SCALP ADAPTASYONU VE 4 SAATLİK (4H) İŞLEM ANALİZİ</div>
+            <div class="section-header-badge" style="color:#38bdf8;">{scalp_badge}</div>
         </div>
-        
-        <div style="background:#0b1120; padding:10px 16px; border-radius:8px; border:1px solid {align_clr}; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center;">
+        """, unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div class="info-bar" style="border-left-color:{align_clr};">
             <div>
-                <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">⚡ Scalp & 4H Trend Uyum Durumu:</span>
-                <div style="font-size:13px; font-weight:900; color:{align_clr}; margin-top:2px;">{alignment_badge}</div>
+                <div class="info-bar-label">⚡ Scalp & 4H Trend Uyum Durumu</div>
+                <div class="info-bar-value" style="color:{align_clr}; font-size:13px;">{alignment_badge}</div>
             </div>
             <div style="text-align:right;">
-                <span style="font-size:11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">🤖 4H AI Tahmin Güveni:</span>
-                <div style="font-size:16px; font-weight:bold; color:{ai_4h_pred['color']};">%{ai_4h_pred['confidence']:.1f}</div>
+                <div class="info-bar-label">🤖 4H AI Tahmin Güveni</div>
+                <div class="info-bar-value" style="color:{ai_4h_pred['color']};">%{ai_4h_pred['confidence']:.1f}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
+
         sc1, sc2, sc3 = st.columns([1.3, 1.3, 1.4])
         with sc1:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid {ai_4h_pred['color']};">
-                <div style="font-size:11px; color:#94a3b8;"> 4 SAATLİK (4H) TAHMİN</div>
-                <div style="font-size:16px; font-weight:bold; color:{ai_4h_pred['color']}; margin-top:3px;">{ai_4h_pred['pred_title']}</div>
-                <div style="font-size:11px; color:#cbd5e1; margin-top:4px;">Model Güveni: <b>%{ai_4h_pred['confidence']:.1f}</b></div>
+            <div class="info-tile" style="border-left-color:{ai_4h_pred['color']};">
+                <div class="info-tile-label">4 Saatlik (4H) Tahmin</div>
+                <div class="info-tile-value-sm" style="color:{ai_4h_pred['color']};">{ai_4h_pred['pred_title']}</div>
+                <div class="info-tile-sub">Model Güveni: <b>%{ai_4h_pred['confidence']:.1f}</b></div>
             </div>
             """, unsafe_allow_html=True)
-            
         with sc2:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #10b981;">
-                <div style="font-size:11px; color:#94a3b8;">🔐 PRİVATE API BAĞLANTI ANALİZİ</div>
-                <div style="font-size:14px; font-weight:bold; color:#10b981; margin-top:3px;">🟢 Borsa API: AKTİF & HAZIR</div>
-                <div style="font-size:11px; color:#cbd5e1; margin-top:4px;">Cüzdan Bakiyesi: <b>${wallet_balance_val:,.2f} USDT</b></div>
+            <div class="info-tile" style="border-left-color:#16a34a;">
+                <div class="info-tile-label">🔐 Private API Bağlantı Analizi</div>
+                <div class="info-tile-value-sm" style="color:#16a34a;">🟢 Borsa API: AKTİF & HAZIR</div>
+                <div class="info-tile-sub">Cüzdan Bakiyesi: <b>${wallet_balance_val:,.2f} USDT</b></div>
             </div>
             """, unsafe_allow_html=True)
-            
         with sc3:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #f59e0b;">
-                <div style="font-size:11px; color:#94a3b8;">⚡ SCALP MİKRO EMİR AKIŞI</div>
-                <div style="font-size:13px; font-weight:bold; color:#f59e0b; margin-top:4px;">Tahta Dengesi: %{depth.get('imbalance', 0):+.1f} ({depth.get('bias', 'DENGELİ')})</div>
+            <div class="info-tile" style="border-left-color:#d97706;">
+                <div class="info-tile-label">⚡ Scalp Mikro Emir Akışı</div>
+                <div class="info-tile-value-sm" style="color:#d97706;">Tahta Dengesi: %{depth.get('imbalance', 0):+.1f}</div>
+                <div class="info-tile-sub">{depth.get('bias', 'DENGELİ')}</div>
             </div>
             """, unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
         # --- KURUMSAL LİKİDASYON ISI HARİTASI VE AKILLI İZLEYEN STOP KARTI ---
-        st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
         st.markdown(f"""
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-            <div class='sub-label'>🔥 KURUMSAL LİKİDASYON ISI HARİTASI & AKILLI İZLEYEN STOP (TRAILING STOP)</div>
-            <div style='font-size:12px; font-weight:bold; color:{liq_matrix.get("liq_color", "#10b981")};'>{liq_matrix.get("liq_badge", "")}</div>
+        <div class="section-header">
+            <div class="section-header-title">🔥 LİKİDASYON ISI HARİTASI & AKILLI İZLEYEN STOP</div>
+            <div class="section-header-badge" style="color:{liq_matrix.get("liq_color", "#34d399")};">{liq_matrix.get("liq_badge", "")}</div>
         </div>
         """, unsafe_allow_html=True)
-        
+
         lq1, lq2, lq3 = st.columns([1.3, 1.3, 1.4])
         with lq1:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #ef4444;">
-                <div style="font-size:11px; color:#94a3b8;">🩸 50x/100x LONG LİKİDASYON DUVARI</div>
-                <div style="font-size:16px; font-weight:bold; color:#ef4444; margin-top:3px;">100x Liq: {fmt(liq_matrix.get('long_liq_100x', 0))}</div>
-                <div style="font-size:12px; color:#64748b; font-weight:bold;">50x Liq: {fmt(liq_matrix.get('long_liq_50x', 0))}</div>
-                <div style="font-size:11px; color:#cbd5e1; margin-top:4px;">Duvar Uzaklığı: <b>%{liq_matrix.get('dist_long_liq_pct', 0):.2f}</b></div>
+            <div class="info-tile" style="border-left-color:#dc2626;">
+                <div class="info-tile-label">🩸 Long Likidasyon Duvarı</div>
+                <div class="info-tile-value-sm" style="color:#dc2626;">100x Liq: {fmt(liq_matrix.get('long_liq_100x', 0))}</div>
+                <div class="info-tile-sub">50x Liq: {fmt(liq_matrix.get('long_liq_50x', 0))}</div>
+                <div class="info-tile-sub">Duvar Uzaklığı: <b>%{liq_matrix.get('dist_long_liq_pct', 0):.2f}</b></div>
             </div>
             """, unsafe_allow_html=True)
-            
         with lq2:
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #f59e0b;">
-                <div style="font-size:11px; color:#94a3b8;">🚀 50x/100x SHORT LİKİDASYON DUVARI</div>
-                <div style="font-size:16px; font-weight:bold; color:#f59e0b; margin-top:3px;">100x Liq: {fmt(liq_matrix.get('short_liq_100x', 0))}</div>
-                <div style="font-size:12px; color:#64748b; font-weight:bold;">50x Liq: {fmt(liq_matrix.get('short_liq_50x', 0))}</div>
-                <div style="font-size:11px; color:#cbd5e1; margin-top:4px;">Duvar Uzaklığı: <b>%{liq_matrix.get('dist_short_liq_pct', 0):.2f}</b></div>
+            <div class="info-tile" style="border-left-color:#d97706;">
+                <div class="info-tile-label">🚀 Short Likidasyon Duvarı</div>
+                <div class="info-tile-value-sm" style="color:#d97706;">100x Liq: {fmt(liq_matrix.get('short_liq_100x', 0))}</div>
+                <div class="info-tile-sub">50x Liq: {fmt(liq_matrix.get('short_liq_50x', 0))}</div>
+                <div class="info-tile-sub">Duvar Uzaklığı: <b>%{liq_matrix.get('dist_short_liq_pct', 0):.2f}</b></div>
             </div>
             """, unsafe_allow_html=True)
-            
         with lq3:
             atr_val = latest_row["atr"]
             if "LONG" in confluence["final_signal"]:
                 trail_sl = current_price - (atr_val * 1.5)
-                trail_note = f"🟢 İzleyen Stop Seviyesi: <b>{fmt(trail_sl)}</b> (Fiyat yükseldikçe stop yukarı kayar)"
+                trail_note = f"🟢 İzleyen Stop: {fmt(trail_sl)} (Fiyat yükseldikçe stop yukarı kayar)"
             elif "SHORT" in confluence["final_signal"]:
                 trail_sl = current_price + (atr_val * 1.5)
-                trail_note = f"🔻 İzleyen Stop Seviyesi: <b>{fmt(trail_sl)}</b> (Fiyat düştükçe stop aşağı kayar)"
+                trail_note = f"🔻 İzleyen Stop: {fmt(trail_sl)} (Fiyat düştükçe stop aşağı kayar)"
             else:
-                trail_note = "⚖️ Pozisyon Beklemede (Akıllı İzleyen Stop Pasif)"
-                
+                trail_note = "⚖️ Pozisyon Beklemede (Pasif)"
             st.markdown(f"""
-            <div style="background:#0b1120; padding:10px 14px; border-radius:8px; border:1px solid #38bdf8;">
-                <div style="font-size:11px; color:#94a3b8;">🎯 AKILLI İZLEYEN STOP & PARÇALI KÂR</div>
-                <div style="font-size:12px; color:#38bdf8; font-weight:bold; margin-top:3px;">{trail_note}</div>
-                <div style="font-size:11px; color:#cbd5e1; margin-top:4px;">Parçalı Çıkış: <b>%50 TP1'de Kâr Al + Girişe SL Çek</b></div>
+            <div class="info-tile" style="border-left-color:#3b82f6;">
+                <div class="info-tile-label">🎯 Akıllı İzleyen Stop & Parçalı Kâr</div>
+                <div class="info-tile-value-sm" style="color:#3b82f6;">{trail_note}</div>
+                <div class="info-tile-sub">Parçalı Çıkış: <b>%50 TP1'de Kâr Al + Girişe SL Çek</b></div>
             </div>
             """, unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
 
         # --- TEKNİK İNDİKATÖR RADARI VE YÖN MATRİSİ ---
-        st.markdown("<div class='quantum-card'>", unsafe_allow_html=True)
-        st.markdown("<div class='sub-label'>📡 ÇOK BOYUTLU İNDİKATÖR RADARI & CANLI YÖN MATRİSİ (LONG / SHORT EĞİLİMLERİ)</div>", unsafe_allow_html=True)
-        
+        st.markdown("""
+        <div class="section-header">
+            <div class="section-header-title">📡 ÇOK BOYUTLU İNDİKATÖR RADARI & CANLI YÖN MATRİSİ</div>
+        </div>
+        """, unsafe_allow_html=True)
+
         ind1, ind2, ind3, ind4, ind5, ind6, ind7 = st.columns(7)
-        
-        with ind1:
-            rsi_val = latest_row["rsi"]
-            rsi_dir = "🟢 LONG" if rsi_val > 50 else "🔻 SHORT"
-            rsi_clr = "#10b981" if rsi_val > 50 else "#ef4444"
-            st.markdown(f"""
-            <div class='indicator-box'>
-                <div class='indicator-title'>RSI (14)</div>
-                <div class='indicator-value' style='color:{rsi_clr};'>{rsi_val:.1f}</div>
-                <div class='indicator-status' style='color:{rsi_clr}; font-weight:bold;'>{rsi_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with ind2:
-            macd_diff_val = latest_row["macd_diff"]
-            macd_dir = "🟢 LONG" if macd_diff_val > 0 else "🔻 SHORT"
-            macd_clr = "#10b981" if macd_diff_val > 0 else "#ef4444"
-            st.markdown(f"""
-            <div class='indicator-box'>
-                <div class='indicator-title'>MACD HİST</div>
-                <div class='indicator-value' style='color:{macd_clr};'>{macd_diff_val:+.3f}</div>
-                <div class='indicator-status' style='color:{macd_clr}; font-weight:bold;'>{macd_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with ind3:
-            is_ema_bull = latest_row["ema_9"] > latest_row["ema_21"]
-            ema_dir = "🟢 LONG" if is_ema_bull else "🔻 SHORT"
-            ema_clr = "#10b981" if is_ema_bull else "#ef4444"
-            st.markdown(f"""
-            <div class='indicator-box'>
-                <div class='indicator-title'>EMA (9/21)</div>
-                <div class='indicator-value' style='color:{ema_clr}; font-size: 12px;'>{fmt(latest_row['ema_9'])}</div>
-                <div class='indicator-status' style='color:{ema_clr}; font-weight:bold;'>{ema_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with ind4:
-            is_ema200_bull = current_price > latest_row["ema_200"]
-            ema200_dir = "🟢 LONG" if is_ema200_bull else "🔻 SHORT"
-            ema200_clr = "#10b981" if is_ema200_bull else "#ef4444"
-            st.markdown(f"""
-            <div class='indicator-box'>
-                <div class='indicator-title'>EMA 200 MAKRO</div>
-                <div class='indicator-value' style='color:{ema200_clr}; font-size: 12px;'>{fmt(latest_row['ema_200'])}</div>
-                <div class='indicator-status' style='color:{ema200_clr}; font-weight:bold;'>{ema200_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with ind5:
-            stoch_k_val = latest_row["stoch_k"]
-            stoch_d_val = latest_row["stoch_d"]
-            stoch_dir = "🟢 LONG" if stoch_k_val > stoch_d_val else "🔻 SHORT"
-            stoch_clr = "#10b981" if stoch_k_val > stoch_d_val else "#ef4444"
-            st.markdown(f"""
-            <div class='indicator-box'>
-                <div class='indicator-title'>STOKASTİK</div>
-                <div class='indicator-value' style='color:{stoch_clr};'>%{stoch_k_val:.1f}</div>
-                <div class='indicator-status' style='color:{stoch_clr}; font-weight:bold;'>{stoch_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with ind6:
-            bb_pct_val = latest_row["bb_pct"]
-            bb_dir = "🟢 LONG" if bb_pct_val > 0.50 else "🔻 SHORT"
-            bb_clr = "#10b981" if bb_pct_val > 0.50 else "#ef4444"
-            st.markdown(f"""
-            <div class='indicator-box'>
-                <div class='indicator-title'>BOLLİNGER BANT</div>
-                <div class='indicator-value' style='color:{bb_clr};'>%{bb_pct_val*100:.0f}</div>
-                <div class='indicator-status' style='color:{bb_clr}; font-weight:bold;'>{bb_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        with ind7:
-            u_d_val = usdt_dom.get("usdt_d", 6.98)
-            u_chg = usdt_dom.get("usdt_d_change", 0.0)
-            usdt_dir = "🟢 LONG" if u_chg < 0 else "🔻 SHORT"
-            usdt_clr = "#10b981" if u_chg < 0 else "#ef4444"
-            st.markdown(f"""
-            <div class='indicator-box'>
-                <div class='indicator-title'>🌐 USDT.D DOMİNANS</div>
-                <div class='indicator-value' style='color:{usdt_clr}; font-size:13px;'>%{u_d_val:.2f} {'▼' if u_chg < 0 else '▲'}</div>
-                <div class='indicator-status' style='color:{usdt_clr}; font-weight:bold;'>{usdt_dir}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True)
+
+        rsi_val = latest_row["rsi"]
+        macd_diff_val = latest_row["macd_diff"]
+        is_ema_bull = latest_row["ema_9"] > latest_row["ema_21"]
+        is_ema200_bull = current_price > latest_row["ema_200"]
+        stoch_k_val = latest_row["stoch_k"]
+        stoch_d_val = latest_row["stoch_d"]
+        bb_pct_val = latest_row["bb_pct"]
+        u_d_val = usdt_dom.get("usdt_d", 6.98)
+        u_chg = usdt_dom.get("usdt_d_change", 0.0)
+
+        indicator_defs = [
+            (ind1, "RSI (14)", f"{rsi_val:.1f}", rsi_val > 50),
+            (ind2, "MACD HİST", f"{macd_diff_val:+.3f}", macd_diff_val > 0),
+            (ind3, "EMA (9/21)", fmt(latest_row['ema_9']), is_ema_bull),
+            (ind4, "EMA 200 MAKRO", fmt(latest_row['ema_200']), is_ema200_bull),
+            (ind5, "STOKASTİK", f"%{stoch_k_val:.1f}", stoch_k_val > stoch_d_val),
+            (ind6, "BOLLİNGER", f"%{bb_pct_val*100:.0f}", bb_pct_val > 0.50),
+            (ind7, "USDT.D", f"%{u_d_val:.2f} {'▼' if u_chg < 0 else '▲'}", u_chg < 0),
+        ]
+        for col, title, value, is_long in indicator_defs:
+            clr = "#16a34a" if is_long else "#dc2626"
+            dir_txt = "🟢 LONG" if is_long else "🔻 SHORT"
+            with col:
+                st.markdown(f"""
+                <div class="indicator-chip" style="border-top:3px solid {clr};">
+                    <div class="indicator-chip-title">{title}</div>
+                    <div class="indicator-chip-value" style="color:{clr};">{value}</div>
+                    <div class="indicator-chip-dir" style="color:{clr};">{dir_txt}</div>
+                </div>
+                """, unsafe_allow_html=True)
 
     # İşlem Motoru Gecikme Bilgisi
     elapsed_ms = (time.time() - fetch_start) * 1000
