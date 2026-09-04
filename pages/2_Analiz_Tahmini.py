@@ -86,7 +86,7 @@ PREMIUM_CSS = """
     [data-testid="stSidebar"] [data-testid="stTextInput"] > div > div,
     [data-testid="stSidebar"] [data-testid="stNumberInput"] > div > div,
     [data-testid="stSidebar"] [data-testid="stSlider"] {
-        background: linear-gradient(90deg, rgba(45,212,191,0.22), rgba(251,146,60,0.22)) !important;
+        background: rgba(20,184,166,0.10) !important;
         border-radius: 999px !important;
         border: 1px solid rgba(15,43,46,0.10) !important;
     }
