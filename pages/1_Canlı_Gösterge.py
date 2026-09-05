@@ -208,8 +208,26 @@ def fetch_binance_account_balance(exchange_id: str = "mexc", api_key: str = "", 
         ex = get_exchange_client(exchange_id, api_key, secret_key)
         bal = ex.fetch_balance()
         usdt_bal = bal.get('USDT', {})
-        total = usdt_bal.get('total', 0.0)
-        free = usdt_bal.get('free', 0.0)
+        total = usdt_bal.get('total', 0.0) or 0.0
+        free = usdt_bal.get('free', 0.0) or 0.0
+
+        # ONEMLI - KOK NEDEN (bakiye $0 gorunmesi): MEXC vadeli hesapta ACIK POZISYON
+        # varken tum bakiye "positionMargin" olarak kilitleniyor, cashBalance/availableBalance
+        # SIFIR oluyor. ccxt'nin standartlastirdigi 'total' alani sadece bunlardan
+        # hesaplandigi icin, gercekte $280+ degeri olan bir hesap kullaniciya YANLISLIKLA
+        # $0 gosteriliyordu. MEXC'in HAM API yanitinda (info.data) ise "equity" alani
+        # (nakit + acik pozisyon marji + gerceklesmemis kar/zarar) hesabin GERCEK guncel
+        # degerini veriyor - varsa bu deger tercih ediliyor.
+        try:
+            raw_data = bal.get('info', {}).get('data', [])
+            if isinstance(raw_data, list):
+                usdt_raw = next((d for d in raw_data if d.get('currency') == 'USDT'), None)
+                if usdt_raw is not None:
+                    raw_equity = float(usdt_raw.get('equity', 0) or 0)
+                    if raw_equity > total:
+                        total = raw_equity
+        except Exception:
+            pass
         ex_label = [k for k, v in SUPPORTED_EXCHANGES.items() if v == exchange_id]
         ex_label = ex_label[0] if ex_label else exchange_id.upper()
         return {"status": "FUTURES_OK", "wallet_balance": total, "available_balance": free, "type": f"{ex_label} Vadeli (Swap)"}
