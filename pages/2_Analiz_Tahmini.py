@@ -729,6 +729,18 @@ def render_live_chart_component(chart_key: str, height: int = 850) -> None:
     st.components.v1.html(html, height=height + 5)
 
 def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: float, timeframe: str = "", entries_df: pd.DataFrame = None) -> go.Figure:
+    # ONEMLI: Grafigin x-ekseni (mum zamanlari) burada TEK SEFERDE yerel saate (Turkiye,
+    # UTC+3) cevriliyor. Daha once SADECE ozel metin etiketleri (OHLC basligi, AI LONG/SHORT
+    # kutulari) donusturulmustu; ama Plotly'nin KENDI otomatik hover tooltip'i, trace'lere
+    # verilen HAM x degerlerini (df.index) dogrudan kullanir - o yuzden fareyle mumun uzerine
+    # gelince hala UTC saati gorunuyordu. Index'i kaynakta cevirmek hem hover'i hem butun
+    # ozel etiket/ok konumlarini ayni dogru saatle hizalar.
+    df = df.copy()
+    df.index = df.index.tz_convert(LOCAL_TZ)
+    if entries_df is not None and not entries_df.empty:
+        entries_df = entries_df.copy()
+        entries_df.index = entries_df.index.tz_convert(LOCAL_TZ)
+
     fig = make_subplots(rows=2, cols=1, shared_xaxes=True, row_heights=[0.75, 0.25], vertical_spacing=0.03)
     fig.add_trace(go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], increasing_line_color="#22ab94", decreasing_line_color="#f7525f", increasing_fillcolor="#22ab94", decreasing_fillcolor="#f7525f", name="Fiyat"), row=1, col=1)
     fig.add_trace(go.Scattergl(x=df.index, y=df['prob_long'], mode='lines', line=dict(color='#22ab94', width=2), name='LONG %', fill='tozeroy', fillcolor='rgba(34, 171, 148, 0.1)'), row=2, col=1)
