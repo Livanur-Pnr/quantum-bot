@@ -781,20 +781,75 @@ def fetch_dominance_matrix() -> dict:
             "trend": "VERİ ÇEKİLEMEDİ", "bias": "NEUTRAL", "source": "UNAVAILABLE"}
 
 
+@_cache(ttl=900, show_spinner=False)
+def fetch_tradfi_risk_regime() -> dict:
+    """ABD hisse/oynaklik piyasasindan risk-on/risk-off rejimi.
+
+    VIX (TradFi 'korku endeksi') ve Nasdaq-100 momentumu, son yillarda kripto
+    ile guclu ve TUTARLI korelasyon gosteren iki gostergedir: VIX yukseliyorsa
+    piyasa genelinde risk istahi dusuyordur (kripto icin olumsuz), Nasdaq
+    yukseliyorsa risk istahi guclu demektir (kripto icin olumlu).
+
+    ONEMLI - BILINCLI OLARAK EKLENMEYENLER: ABD 10 yillik tahvil faizi ve altin
+    da denendi, ancak kriptoyla korelasyonlari DONEMSEL/TUTARSIZ (bazen risk-off
+    sinyali, bazen enflasyon/likidite sinyali olarak zit yorumlanabiliyor) - bu
+    belirsizlik, dogru sinyalden daha fazla yanlis yonlendirme riski tasidigi
+    icin skorlamaya dahil edilmedi. ttl=900 (15dk): bunlar gunluk kapanisa
+    dayali yavas gostergelerdir, siklikla yenilemenin faydasi yok.
+    """
+    import pandas as pd
+    import yfinance as yf
+
+    out = {}
+
+    def _series_chg_pct(ticker: str) -> float | None:
+        try:
+            d = yf.download(ticker, period="10d", interval="1d", progress=False, timeout=15)
+            if isinstance(d.columns, pd.MultiIndex):
+                d.columns = d.columns.get_level_values(0)
+            closes = d["Close"].dropna()
+            if len(closes) < 2:
+                return None
+            return float((closes.iloc[-1] - closes.iloc[-2]) / closes.iloc[-2] * 100), float(closes.iloc[-1])
+        except Exception:
+            return None
+
+    def _vix():
+        r = _series_chg_pct("^VIX")
+        if r:
+            out["vix_chg_pct"], out["vix_level"] = r
+
+    def _ndx():
+        r = _series_chg_pct("^NDX")
+        if r:
+            out["ndx_chg_pct"], out["ndx_level"] = r
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        for fut in [ex.submit(_vix), ex.submit(_ndx)]:
+            try:
+                fut.result(timeout=20)
+            except Exception:
+                pass
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────
 # HARMANLANMIS PIYASA YONU - IKI PANELIN DE ORTAK KARAR KAYNAGI
 # ─────────────────────────────────────────────────────────────────
 # Agirliklar toplami TAM 100 olmali (coverage_pct bunun uzerinden hesaplanir).
 W_TAKER = 18      # Agresif alici/satici akisi - en dogrudan yon sinyali
-W_OI = 10         # Acik pozisyon degisimi - trendin arkasindaki para
-W_LIQ = 14        # Likidasyon dengesizligi - hangi taraf temizlendi (OKX gercek veri)
-W_TOP = 14        # Buyuk oyuncu (top trader) pozisyonu - akilli para, YONU TAKIP EDILIR
-W_LS = 8          # Kalabalik hesap orani - TERSINE (contrarian) okunur
-W_FUNDING = 8     # Fonlama orani (3 borsa ort.) - asiri kaldirac TERSINE okunur
-W_PREMIUM = 6     # Coinbase primi - ABD kurumsal talebi
-W_BASIS = 10      # Vadeli-spot fiyat farki (contango/backwardation)
-W_DOM = 12        # Dolar dominansi - nakite kacis mi, kriptoya akis mi
-assert W_TAKER + W_OI + W_LIQ + W_TOP + W_LS + W_FUNDING + W_PREMIUM + W_BASIS + W_DOM == 100
+W_OI = 8          # Acik pozisyon degisimi - trendin arkasindaki para
+W_LIQ = 13        # Likidasyon dengesizligi - hangi taraf temizlendi (OKX gercek veri)
+W_TOP = 13        # Buyuk oyuncu (top trader) pozisyonu - akilli para, YONU TAKIP EDILIR
+W_LS = 7          # Kalabalik hesap orani - TERSINE (contrarian) okunur
+W_FUNDING = 7     # Fonlama orani (8 borsa ort.) - asiri kaldirac TERSINE okunur
+W_PREMIUM = 5     # Coinbase primi - ABD kurumsal talebi
+W_BASIS = 9       # Vadeli-spot fiyat farki (contango/backwardation)
+W_DOM = 10        # Dolar dominansi - nakite kacis mi, kriptoya akis mi
+W_VIX = 5         # TradFi korku endeksi - risk-off gostergesi (TERSINE okunur)
+W_NDX = 5         # Nasdaq-100 momentumu - risk-on gostergesi
+assert (W_TAKER + W_OI + W_LIQ + W_TOP + W_LS + W_FUNDING + W_PREMIUM
+        + W_BASIS + W_DOM + W_VIX + W_NDX) == 100
 
 
 def compute_market_bias(symbol: str, timeframe: str = "15m") -> dict:
@@ -807,6 +862,7 @@ def compute_market_bias(symbol: str, timeframe: str = "15m") -> dict:
     """
     deriv = fetch_derivatives_matrix(symbol, timeframe)
     dom = fetch_dominance_matrix()
+    tradfi = fetch_tradfi_risk_regime()
 
     score = 0.0
     used_weight = 0.0
@@ -907,6 +963,26 @@ def compute_market_bias(symbol: str, timeframe: str = "15m") -> dict:
         checks.append(("Dolar Dominansı (USDT.D)",
                        f"%{dom.get('usdt_d', 0):.2f} (24s %{chg:+.2f})",
                        "pass" if abs(chg) > 0.3 else "warn", contrib))
+
+    # 7) VIX (TradFi korku endeksi) - yukseliyorsa risk-off, TERSINE okunur
+    if "vix_chg_pct" in tradfi:
+        vc = tradfi["vix_chg_pct"]
+        contrib = -max(-1.0, min(1.0, vc / 8.0)) * W_VIX
+        score += contrib
+        used_weight += W_VIX
+        checks.append(("VIX (TradFi Korku Endeksi)",
+                       f"{tradfi.get('vix_level', 0):.1f} (1g %{vc:+.1f})",
+                       "pass" if abs(vc) > 3 else "warn", contrib))
+
+    # 8) Nasdaq-100 momentumu - risk-on gostergesi, kriptoyla ayni yonde okunur
+    if "ndx_chg_pct" in tradfi:
+        nc = tradfi["ndx_chg_pct"]
+        contrib = max(-1.0, min(1.0, nc / 1.5)) * W_NDX
+        score += contrib
+        used_weight += W_NDX
+        checks.append(("Nasdaq-100 Momentumu (risk-on)",
+                       f"1g %{nc:+.2f}",
+                       "pass" if abs(nc) > 0.5 else "warn", contrib))
 
     # Eksik veri varsa skoru mevcut agirliga gore olcekle - yoksa yapay olarak zayif gorunur.
     if used_weight > 0:
