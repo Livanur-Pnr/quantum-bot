@@ -27,7 +27,14 @@ import pandas as pd
 import numpy as np
 import concurrent.futures
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import time
+
+# ONEMLI: Borsa verisi (ccxt) UTC zaman damgasi ile gelir (df.index tz-aware UTC).
+# Ekranda gosterilen TUM mum/sinyal saatleri bu yuzden kullaniciya "3 saat geri" gibi
+# gorunuyordu (ornegin gercekte 03:15 olan yerel saat, UTC'de 00:15 olarak basiliyordu).
+# Turkiye DST kullanmadigi icin sabit UTC+3 (Europe/Istanbul) guvenle kullanilabilir.
+LOCAL_TZ = ZoneInfo("Europe/Istanbul")
 from dotenv import load_dotenv
 import http.server
 import threading
@@ -796,7 +803,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
         if e.empty:
             return np.empty((0, 6), dtype=object)
         return np.stack([
-            e.index.strftime("%Y-%m-%d %H:%M"),
+            e.index.tz_convert(LOCAL_TZ).strftime("%Y-%m-%d %H:%M"),
             [direction] * len(e),
             e[prob_col].map(lambda v: f"{v:.1f}"),
             e["close"].map(format_price),
@@ -880,7 +887,7 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     chg_pct = (chg / prev_close * 100.0) if prev_close else 0.0
     ohlc_color = "#22ab94" if chg >= 0 else "#f7525f"
     ohlc_text = (
-        f"<b>{last_idx.strftime('%Y/%m/%d %H:%M')}</b> | "
+        f"<b>{last_idx.tz_convert(LOCAL_TZ).strftime('%Y/%m/%d %H:%M')}</b> | "
         f"Open: <b>{format_price(last['open'])}</b> | "
         f"Close: <b>{format_price(last['close'])}</b> | "
         f"High: <b>{format_price(last['high'])}</b> | "
@@ -1084,7 +1091,7 @@ def main():
                 is_long_row = row["ai_signal"] == "LONG"
                 conf = row["prob_long"] if is_long_row else row["prob_short"]
                 display_rows.append({
-                    "Tarih / Saat": idx.strftime("%Y-%m-%d %H:%M") if hasattr(idx, "strftime") else str(idx),
+                    "Tarih / Saat": idx.tz_convert(LOCAL_TZ).strftime("%Y-%m-%d %H:%M") if hasattr(idx, "tz_convert") else str(idx),
                     "Yön": "🟢 LONG" if is_long_row else "🔴 SHORT",
                     "Güven": round(float(conf), 1),
                     "Giriş": format_price(row["close"]),
@@ -1124,7 +1131,7 @@ def main():
                     is_long_row = row["ai_signal"] == "LONG"
                     conf = row["prob_long"] if is_long_row else row["prob_short"]
                     table_cd = [
-                        idx_val.strftime("%Y-%m-%d %H:%M") if hasattr(idx_val, "strftime") else str(idx_val),
+                        idx_val.tz_convert(LOCAL_TZ).strftime("%Y-%m-%d %H:%M") if hasattr(idx_val, "tz_convert") else str(idx_val),
                         "LONG" if is_long_row else "SHORT",
                         f"{conf:.1f}",
                         format_price(row["close"]),
