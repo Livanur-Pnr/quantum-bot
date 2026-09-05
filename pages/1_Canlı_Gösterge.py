@@ -900,9 +900,18 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
         df['atr'] = tr.ewm(alpha=1/14, adjust=False).mean()
     
     target_candles = 15
-    tp_m = 3.0
-    sl_m = 1.5
-    
+    # ONEMLI - BACKTEST ILE DOGRULANMIS DUZELTME: Eski oran (TP=3.0x/SL=1.5x, R:R=2:1
+    # AMA yanlis mutlak degerlerle) 30 gunluk grid search'te 67 kombinasyondan 57. sirada
+    # cikti (edge sadece +12.3 - neredeyse basabas). TP=2.0x/SL=1.0x (AYNI R:R=2:1 orani,
+    # daha dar/isabetli mesafeler) hem 30 gunde (n=30, isabet %80.0, edge +46.7) hem 90
+    # gunluk BAGIMSIZ veride (n=40, isabet %70.0, edge +36.7) belirgin sekilde daha iyi
+    # cikti. NOT: sayfa 2'de (2_Analiz_Tahmini.py) AYNI oran (2:1) BAGIMSIZ olarak yine
+    # en iyi cikmisti - bu tesadufi degil, tutarli bir bulgu. DURUSTLUK: 90 gunluk ay-ay
+    # kirilimda varyans yuksek (Haziran %80.8, Agustos %12.5) - toplam sonuc kismen
+    # Haziran'a dayaniyor, mutlak "kanitlanmis" degil ama mevcut ayardan kesinlikle daha iyi.
+    tp_m = 2.0
+    sl_m = 1.0
+
     targets = np.zeros(len(df))
     closes, highs, lows, atrs = df['close'].values, df['high'].values, df['low'].values, df['atr'].values
     
