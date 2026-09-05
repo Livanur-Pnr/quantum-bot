@@ -41,6 +41,14 @@ import threading
 import socket
 from urllib.parse import urlparse, parse_qs
 
+# ORTAK PIYASA ISTIHBARATI: Coinglass (varsa) / borsa turev toplami + Dolar Dominansi.
+# Bu modulu Analiz Tahmini paneli de kullanir - iki panelin ayni yonu gormesinin sebebi budur.
+import os
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+import market_intel
+
 try:
     from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, HistGradientBoostingClassifier, VotingClassifier
     from sklearn.metrics import accuracy_score
@@ -267,11 +275,20 @@ def fetch_crypto_data(exchange_id: str, symbol: str, timeframe: str, limit: int 
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df.set_index("timestamp", inplace=True)
         
-        # MEXC proxy kurumsal veriler
-        df['oi'] = (df['close'] - df['open']) / df['open'] * (df['volume'] / (df['volume'].mean()+1e-9)) * 10
-        df['taker_buy_vol'] = np.where(df['close'] > df['open'], df['volume'] * 0.6, df['volume'] * 0.4)
-        df['taker_sell_vol'] = np.where(df['close'] < df['open'], df['volume'] * 0.6, df['volume'] * 0.4)
-        
+        # GERCEK KURUMSAL TUREV VERISI (Coinglass / borsa vadeli uc noktalari)
+        # ONCEDEN buradaki 'oi' ve 'taker_*' sutunlari mumun kendi yonunden UYDURULUYORDU
+        # (ornegin "mum yesilse hacmin %60'i alicidir" gibi). Bu, gercek acik pozisyon veya
+        # gercek taker akisi DEGILDI ve iki panelin birbirine zit tahmin uretmesinin ana
+        # sebebiydi. Artik gercek OI / taker akisi / long-short orani cekiliyor.
+        df = market_intel.attach_derivatives_to_df(df, symbol, timeframe)
+        df['oi'] = df['oi_value']
+        # Taker akisini eski sutun isimleriyle uyumlu tut (asagidaki ML kodu bunlari kullaniyor),
+        # ama artik gercek alim/satim dengesinden turetiliyor.
+        _flow = df['taker_delta_pct'] / 100.0
+        df['taker_buy_vol'] = df['volume'] * (0.5 + _flow / 2.0)
+        df['taker_sell_vol'] = df['volume'] * (0.5 - _flow / 2.0)
+
+
         try:
             funding = ex.fetch_funding_rate_history(symbol, limit=200)
             df_fund = pd.DataFrame(funding)
@@ -286,8 +303,14 @@ def fetch_crypto_data(exchange_id: str, symbol: str, timeframe: str, limit: int 
         if ob:
             bids, asks = sum([b[1] for b in ob['bids']]), sum([a[1] for a in ob['asks']])
             df.loc[df.index[-1], 'ob_imbalance'] = bids / asks if asks > 0 else 1.0
-            
-        return df.astype(float)
+
+        # Dolar Dominansi (USDT.D) ve 24s degisimi - Analiz Tahmini panelindeki AYNI kaynak.
+        dom = market_intel.fetch_dominance_matrix()
+        df['usdt_dominance'] = float(dom.get('usdt_d', 0.0) or 0.0)
+        df['usdt_dom_change'] = float(dom.get('usdt_d_change', 0.0) or 0.0)
+
+        # 'deriv_source' metin sutunudur; astype(float) onu cevirmeye calisip cokerdi.
+        return df.drop(columns=['deriv_source'], errors='ignore').astype(float)
         
     except Exception as e:
         ex_label = next((k for k, v in SUPPORTED_EXCHANGES.items() if v == exchange_id), exchange_id.upper())
@@ -368,11 +391,18 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
     """
     Yapay Zeka Botu ile %100 Senkronize Edilmis ML Motoru
     """
+    # ONEMLI: 'oi_change_pct', 'taker_delta_pct', 'ls_ratio' ve 'usdt_dom_change' artik
+    # GERCEK turev/dominans verisidir (market_intel). Onceden bunlar mumun kendi yonunden
+    # uydurulan proxy'lerdi; bu yuzden iki panel ayni piyasada zit sonuc uretebiliyordu.
     feature_cols = [
         'rsi', 'macd_hist', 'macd_hist_slope', 'dist_ema50', 'roc', 'adx',
         'ema_trend', 'oi_change_pct', 'volume_delta_trend', 'ob_pressure',
-        'fear_greed', 'dxy', 'funding_rate'
+        'fear_greed', 'dxy', 'funding_rate',
+        'taker_delta_pct', 'ls_ratio'
     ]
+    # NOT: Dolar Dominansi bilerek ML ozelligi DEGIL - anlik tek bir degerdir, mum bazinda
+    # degismedigi icin modele sabit sutun olarak girerse bilgi tasimaz. Bunun yerine
+    # market_intel.compute_market_bias icinde agirliklandirilip nihai yon suzgecine giriyor.
     
     # Indikatörleri hesapla
     delta = df['close'].diff()
@@ -1018,7 +1048,17 @@ def main():
 
         is_long = stable_row["prob_long"] > stable_row["prob_short"]
         live_prob, live_dir = (stable_row["prob_long"], "LONG") if is_long else (stable_row["prob_short"], "SHORT")
-        live_color = "#22ab94" if is_long else "#f7525f"
+
+        # ORTAK YON SUZGECI: ML ciktisi, Analiz Tahmini panelinin de kullandigi AYNI
+        # market_intel.compute_market_bias sonucuyla uzlastirilir. Iki panel ayni
+        # sembol+zaman diliminde artik asla zit yon gosteremez.
+        market_bias = market_intel.compute_market_bias(symbol, tf)
+        reconciled = market_intel.reconcile_with_bias(live_dir, live_prob, market_bias)
+        live_dir = reconciled["direction"]
+        live_prob = reconciled["confidence"]
+        is_long = live_dir == "LONG"
+
+        live_color = "#22ab94" if is_long else ("#f7525f" if live_dir == "SHORT" else "#94a3b8")
         live_tp_dist = clamp_tp_sl_dist(atr * tp_m, last_price, tf, "tp")
         live_sl_dist = clamp_tp_sl_dist(atr * sl_m, last_price, tf, "sl")
         live_tp = last_price + live_tp_dist if is_long else last_price - live_tp_dist
@@ -1044,12 +1084,18 @@ def main():
                 {stat_sparkline}</div>'''
         else:
             stat_sparkline = _build_sparkline_svg(df['close'].tail(80).tolist(), line_color=live_color)
+            _headline = ("⛔ BEKLE - Veriler çelişiyor, işleme GİRME."
+                         if live_dir == "BEKLE" else "⏳ İZLEMEDE (Eşik Altı) - Şu an işleme GİRME.")
+            _levels = ("" if live_dir == "BEKLE" else
+                       f'<p style="color:#5f7d7a; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p>')
             stat_html = f'''<div class="metric-card" style="border:1px solid rgba(15,43,46,0.10); background:#ffffff; text-align:center; padding: 15px;">
-                <h3 style="color:#5f7d7a; margin:0; font-weight:800; font-size:1.3rem;">⏳ İZLEMEDE (Eşik Altı) - Şu an işleme GİRME.</h3>
+                <h3 style="color:#5f7d7a; margin:0; font-weight:800; font-size:1.3rem;">{_headline}</h3>
                 <p style="color:#5f7d7a; font-size:1.0rem; margin-top:10px; margin-bottom:5px;">Beklenen Yön: <b style="color:{live_color}">{live_dir}</b> (Güven: %{live_prob:.1f})</p>
-                <p style="color:#5f7d7a; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p>
+                {_levels}
                 {stat_sparkline}</div>'''
         st.markdown(stat_html, unsafe_allow_html=True)
+
+        market_intel.render_market_intel_card(market_bias, reconciled)
     
         # ONEMLI: Grafikteki isaretler ile alttaki "Gecmis Islem Sinyalleri Kayit Defteri"
         # tablosu artik TAM AYNI veriyi (entries_df) kullanir - bu yuzden entries_df, tabloyu

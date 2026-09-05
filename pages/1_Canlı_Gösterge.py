@@ -62,6 +62,13 @@ import difflib
 import ccxt
 from dotenv import load_dotenv
 
+# ORTAK PIYASA ISTIHBARATI: Coinglass (anahtar varsa) / borsa turev toplami + Dolar Dominansi.
+# Canli Gosterge paneli de AYNI modulu kullanir; iki panelin celismemesinin sebebi budur.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+import market_intel
+
 # --- MEXC GÜVENLİ KİMLİK DOĞRULAMA VE OTOMATİK İŞLEM MOTORU (CCXT) ---
 
 import concurrent.futures
@@ -361,11 +368,17 @@ def fetch_institutional_order_flow(symbol: str, timeframe: str = "5m", limit: in
         if not ohlcv: return pd.DataFrame()
         
         df = pd.DataFrame(ohlcv, columns=["time", "open", "high", "low", "close", "vol"])
-        df['time'] = pd.to_datetime(df['time'], unit='ms')
-        
-        df['oi_change_pct'] = (df['close'] - df['open']) / df['open'] * (df['vol'] / (df['vol'].mean()+1e-9)) * 10
-        df['taker_delta_trend'] = np.where(df['close'] > df['open'], df['vol'] * 0.6, -df['vol'] * 0.6)
-        
+        df['time'] = pd.to_datetime(df['time'], unit='ms', utc=True)
+        df.set_index('time', inplace=True)
+
+        # GERCEK KURUMSAL AKIS: Bu iki sutun ONCEDEN mumun kendi yonunden uyduruluyordu
+        # ("mum yesilse hacmin %60'i alicidir" gibi) - gercek acik pozisyon ya da gercek
+        # taker akisi degildi. Artik market_intel uzerinden gercek OI / taker verisi geliyor.
+        df = market_intel.attach_derivatives_to_df(df, symbol, api_interval)
+        df['taker_delta_trend'] = df['taker_delta_pct']
+
+        df = df.reset_index().rename(columns={'time': 'time'})
+        df['time'] = df['time'].dt.tz_localize(None)
         return df[['time', 'oi_change_pct', 'taker_delta_trend']]
     except Exception:
         return pd.DataFrame()
@@ -968,7 +981,7 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
         "active_features": final_features
     }
 
-def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_data: dict, usdt_dom: dict = None, sr_levels: dict = None) -> dict:
+def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_data: dict, usdt_dom: dict = None, sr_levels: dict = None, market_bias: dict = None) -> dict:
     """Yapay zeka çıktısını teknik indikatörler, trend, tahta baskısı, TradingView Dolar Dominansı (% USDT.D) ve Majör Destek/Direnç Seviyeleri ile çapraz doğrulayarak sahte sinyalleri eler."""
     prob_long = ai_res["prob_long"]
     prob_short = ai_res["prob_short"]
@@ -1159,6 +1172,31 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
             trade_allowed = True
             action_note = "Düşüş yönünde işlem fırsatı mevcut. Sıkı stop-loss ile takip edin."
             
+    # ORTAK YON SUZGECI (Canli Gosterge paneliyle ayni fonksiyon):
+    # Turev verisi (Coinglass/borsa toplami) + Dolar Dominansi harmani, buradaki yonle
+    # celisiyorsa sinyal iptal edilir. Iki panel de ayni suzgecten gectigi icin artik
+    # ayni sembol+zaman diliminde birbirine zit yon gosteremezler.
+    reconciled = None
+    if market_bias:
+        _dir = "LONG" if final_signal.endswith("LONG") else ("SHORT" if final_signal.endswith("SHORT") else "NÖTR")
+        reconciled = market_intel.reconcile_with_bias(_dir, confidence, market_bias)
+        if reconciled["direction"] == "BEKLE" and _dir in ("LONG", "SHORT"):
+            final_signal = "NEUTRAL"
+            signal_title = "🛑 NÖTR / BEKLE (TÜREV VERİSİ ÇELİŞİYOR)"
+            badge_class = "signal-badge-neutral"
+            trade_allowed = False
+            action_note = reconciled["note"]
+        elif reconciled["status"] in ("ONAYLI", "ZAYIF_ONAY", "ZAYIF_CELISKI"):
+            confidence = reconciled["confidence"]
+            action_note += " " + reconciled["note"]
+            # Guven duserse baslik da duser: "GÜÇLÜ ... (YÜKSEK GÜVEN)" etiketi, uzlastirma
+            # sonrasi dusuk guvenle celismesin diye yeniden hesaplanir.
+            if final_signal in ("STRONG_LONG", "STRONG_SHORT") and confidence < 58.0:
+                if final_signal == "STRONG_LONG":
+                    final_signal, signal_title = "WEAK_LONG", "📈 AKTİF LONG POZİSYONU"
+                else:
+                    final_signal, signal_title = "WEAK_SHORT", "📉 AKTİF SHORT POZİSYONU"
+
     return {
         "final_signal": final_signal,
         "signal_title": signal_title,
@@ -1167,7 +1205,8 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         "trade_allowed": trade_allowed,
         "action_note": action_note,
         "checks": checks,
-        "confidence": confidence
+        "confidence": confidence,
+        "reconciled": reconciled,
     }
 
 
@@ -1597,7 +1636,9 @@ def render_quantum_terminal():
     liq_matrix = compute_liquidation_clusters(df_raw, current_price)
     
     # 4. Sahte Sinyal Filtresi ve Confluence Değerlendirmesi (USDT Dominance + Majör S/R Entegre)
-    confluence = evaluate_confluence_and_filter(ai_result, latest_row, depth, usdt_dom, sr_levels)
+    # ORTAK PIYASA YONU: Canli Gosterge paneliyle BIREBIR ayni fonksiyon/veri kaynagi.
+    market_bias = market_intel.compute_market_bias(symbol_str, active_interval)
+    confluence = evaluate_confluence_and_filter(ai_result, latest_row, depth, usdt_dom, sr_levels, market_bias)
     
     # 4.1. Anlık Sinyal Dalgalanmasını Engelleme (Hysteresis & Signal Lock Engine)
     latched_key = f"latched_sig_{symbol_str}"
@@ -1964,6 +2005,9 @@ def render_quantum_terminal():
                 <div class="info-tile-sub">{selected_leverage}x Kaldıraç, Marjin ${margin_budget:,.0f}</div>
             </div>
             """, unsafe_allow_html=True)
+
+        # --- ORTAK PİYASA İSTİHBARATI (Canlı Gösterge paneliyle BİREBİR aynı kart) ---
+        market_intel.render_market_intel_card(market_bias, confluence.get("reconciled"))
 
         # --- UZUN VADELİ MAJÖR DESTEK VE DİRENÇ YAPISAL ANALİZ KARTI ---
         st.markdown(f"""
