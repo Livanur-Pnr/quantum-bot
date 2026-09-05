@@ -222,7 +222,407 @@ def fetch_coinglass_derivatives(symbol: str, timeframe: str = "15m") -> dict:
     # Hicbir alt uc nokta veri dondurmediyse Coinglass'i kullanilamaz say.
     if not any(k in out for k in ("oi_now", "ls_ratio", "taker_delta_pct", "liq_skew_pct")):
         return {}
+
+    # Coinglass'e ozel olmayan, her zaman ucretsiz calisan ek veri setleri
+    # (basis, spot/vadeli hacim orani, Coinbase primi, buyuk oyuncu orani vb.)
+    # Coinglass sonucunun UZERINE yazilir (Coinglass zaten OI/LS/taker/liq'i verdi).
+    _period = interval if interval in ("5m", "15m", "30m", "1h", "4h", "1d") else "5m"
+    extras = _fetch_free_derivative_extras(coin, _period)
+    for k, v in extras.items():
+        out.setdefault(k, v)
     return out
+
+
+# ─────────────────────────────────────────────────────────────────
+# COINGLASS VERI SETLERININ UCRETSIZ KARSILIKLARI
+# Coinglass verinin kendisini uretmez; borsalarin genel (public) vadeli
+# uc noktalarindan toplar. Asagidaki fonksiyonlar ayni ham kaynaklara
+# dogrudan baglanir - dolayisiyla veri Coinglass'inkiyle ayni koktendir.
+# ─────────────────────────────────────────────────────────────────
+@_cache(ttl=3600, show_spinner=False)
+def _okx_contract_size(inst_id: str) -> float:
+    """OKX vadeli sozlesmelerinde 'sz' alani KONTRAT adedidir, coin miktari degil.
+    USD degeri hesaplanirken kontrat carpani (ctVal) sarttir; coin basina degisir
+    (BTC 0.01, ETH 0.1, SOL 1, DOGE 1000...). Bu atlanirsa likidasyon tutarlari
+    yuzlerce kat sisik cikar."""
+    try:
+        r = requests.get("https://www.okx.com/api/v5/public/instruments",
+                         params={"instType": "SWAP", "instId": inst_id}, timeout=6)
+        data = r.json().get("data", [])
+        if data:
+            return float(data[0].get("ctVal", 1) or 1)
+    except Exception:
+        pass
+    return 1.0
+
+
+@_cache(ttl=30, show_spinner=False)
+def fetch_liquidations(coin: str, window_minutes: int = 60) -> dict:
+    """GERCEK likidasyon verisi (OKX genel uc noktasi).
+
+    Coinglass'in 'Liquidation' panelinin ucretsiz karsiligi. Hangi tarafin
+    temizlendigini gosterir: long'lar patliyorsa asagi baski, short'lar
+    patliyorsa yukari baski (short squeeze) vardir.
+    """
+    inst_id = f"{coin}-USDT-SWAP"
+    try:
+        r = requests.get("https://www.okx.com/api/v5/public/liquidation-orders",
+                         params={"instType": "SWAP", "uly": f"{coin}-USDT",
+                                 "state": "filled", "limit": "100"}, timeout=8)
+        payload = r.json()
+        if str(payload.get("code")) != "0":
+            return {}
+        rows = payload.get("data", [])
+        if not rows:
+            return {}
+    except Exception as e:
+        print(f"[WARN] OKX likidasyon hatasi: {e}")
+        return {}
+
+    ct_val = _okx_contract_size(inst_id)
+    cutoff_ms = (time.time() - window_minutes * 60) * 1000
+
+    long_liq = 0.0
+    short_liq = 0.0
+    count = 0
+    for row in rows:
+        for d in row.get("details", []):
+            try:
+                ts = float(d.get("ts", 0) or 0)
+                if ts < cutoff_ms:
+                    continue
+                usd = float(d.get("sz", 0) or 0) * ct_val * float(d.get("bkPx", 0) or 0)
+                if d.get("posSide") == "long":
+                    long_liq += usd
+                elif d.get("posSide") == "short":
+                    short_liq += usd
+                count += 1
+            except Exception:
+                continue
+
+    total = long_liq + short_liq
+    if total <= 0:
+        return {"liq_long_usd": 0.0, "liq_short_usd": 0.0,
+                "liq_skew_pct": 0.0, "liq_count": 0, "liq_window_min": window_minutes}
+    return {
+        "liq_long_usd": long_liq,
+        "liq_short_usd": short_liq,
+        # Pozitif: agirlikli SHORT'lar patladi (yukari baski / short squeeze).
+        "liq_skew_pct": (short_liq - long_liq) / total * 100,
+        "liq_count": count,
+        "liq_window_min": window_minutes,
+    }
+
+
+@_cache(ttl=30, show_spinner=False)
+def fetch_aggregated_open_interest(coin: str) -> dict:
+    """Coinglass'in 'Open Interest - Exchange List' karsiligi: acik pozisyonun
+    USD cinsinden borsa borsa dagilimi ve toplami.
+
+    Coinglass, OI/fonlama gibi metrikleri TEK bir borsadan degil, piyasadaki
+    COGUNLUGU olusturan borsalarin agirlikli ortalamasindan/toplamindan uretir.
+    Bu yuzden burada da ayni mantikla MUMKUN OLDUGUNCA COK borsa toplanir:
+    Binance, Bybit, OKX, Bitget, Gate.io, HTX (Huobi), KuCoin, Hyperliquid.
+    Herhangi biri erisilemezse (sembol yok, ag hatasi) sessizce atlanir - kalan
+    borsalarla toplam hesaplanmaya devam eder."""
+    pair = f"{coin}USDT"
+    per_exchange = {}
+
+    def _binance():
+        try:
+            oi_coin = float(requests.get("https://fapi.binance.com/fapi/v1/openInterest",
+                                         params={"symbol": pair}, timeout=6).json()["openInterest"])
+            mark = float(requests.get("https://fapi.binance.com/fapi/v1/premiumIndex",
+                                      params={"symbol": pair}, timeout=6).json()["markPrice"])
+            per_exchange["Binance"] = oi_coin * mark
+        except Exception:
+            pass
+
+    def _bybit():
+        try:
+            row = requests.get("https://api.bybit.com/v5/market/tickers",
+                               params={"category": "linear", "symbol": pair},
+                               timeout=6).json()["result"]["list"][0]
+            per_exchange["Bybit"] = float(row["openInterest"]) * float(row["markPrice"])
+        except Exception:
+            pass
+
+    def _okx():
+        try:
+            d = requests.get("https://www.okx.com/api/v5/public/open-interest",
+                             params={"instType": "SWAP", "instId": f"{coin}-USDT-SWAP"},
+                             timeout=6).json()["data"][0]
+            per_exchange["OKX"] = float(d["oiUsd"])
+        except Exception:
+            pass
+
+    def _bitget():
+        try:
+            oi_coin = float(requests.get(
+                "https://api.bitget.com/api/v2/mix/market/open-interest",
+                params={"symbol": pair, "productType": "usdt-futures"},
+                timeout=6).json()["data"]["openInterestList"][0]["size"])
+            mark = float(requests.get(
+                "https://api.bitget.com/api/v2/mix/market/ticker",
+                params={"symbol": pair, "productType": "usdt-futures"},
+                timeout=6).json()["data"][0]["lastPr"])
+            per_exchange["Bitget"] = oi_coin * mark
+        except Exception:
+            pass
+
+    def _gate():
+        try:
+            d = requests.get(f"https://api.gateio.ws/api/v4/futures/usdt/contracts/{coin}_USDT",
+                             timeout=6).json()
+            # ONEMLI: 'position_size' KONTRAT adedidir, coin miktari degil - 'quanto_multiplier'
+            # ile carpilmadan kullanilirsa OI onbinlerce kat sisik cikar (OKX'teki ctVal ile
+            # ayni tuzak).
+            per_exchange["Gate"] = (float(d["position_size"]) * float(d["quanto_multiplier"])
+                                    * float(d["mark_price"]))
+        except Exception:
+            pass
+
+    def _htx():
+        try:
+            d = requests.get("https://api.hbdm.com/linear-swap-api/v1/swap_open_interest",
+                             params={"contract_code": f"{coin}-USDT"}, timeout=6).json()["data"][0]
+            per_exchange["HTX"] = float(d["value"])
+        except Exception:
+            pass
+
+    def _kucoin():
+        try:
+            # KuCoin BTC icin "XBT" ISO-4217-stili kod kullanir, "BTC" degil.
+            symbol = f"{'XBT' if coin == 'BTC' else coin}USDTM"
+            d = requests.get(f"https://api-futures.kucoin.com/api/v1/contracts/{symbol}",
+                             timeout=6).json()["data"]
+            # ONEMLI: 'openInterest' KONTRAT (lot) adedidir; coin karsiligi icin 'multiplier'
+            # ile carpilmasi sart (OKX ctVal / Gate quanto_multiplier ile ayni tuzak turu).
+            oi_coin = float(d["openInterest"]) * float(d["multiplier"])
+            per_exchange["KuCoin"] = oi_coin * float(d["markPrice"])
+        except Exception:
+            pass
+
+    def _hyperliquid():
+        try:
+            r = requests.post("https://api.hyperliquid.xyz/info",
+                              json={"type": "metaAndAssetCtxs"}, timeout=8).json()
+            universe, ctxs = r[0]["universe"], r[1]
+            idx = next((i for i, u in enumerate(universe) if u["name"] == coin), None)
+            if idx is not None:
+                ctx = ctxs[idx]
+                per_exchange["Hyperliquid"] = float(ctx["openInterest"]) * float(ctx["markPx"])
+        except Exception:
+            pass
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as ex:
+        for fut in [ex.submit(f) for f in
+                    (_binance, _bybit, _okx, _bitget, _gate, _htx, _kucoin, _hyperliquid)]:
+            try:
+                fut.result(timeout=10)
+            except Exception:
+                pass
+
+    if not per_exchange:
+        return {}
+    return {"oi_total_usd": sum(per_exchange.values()), "oi_by_exchange": per_exchange}
+
+
+@_cache(ttl=30, show_spinner=False)
+def fetch_aggregated_funding(coin: str) -> dict:
+    """Coinglass'in 'Funding Rate' tablosunun karsiligi: COK borsanin fonlama
+    oranlari ve ortalamasi (Binance, Bybit, OKX, Bitget, Gate, HTX, KuCoin,
+    Hyperliquid). Tek borsaya bakmak yaniltici olabiliyor - bazi borsalar
+    kisa sureli asiri fonlamayla kalabaligi yaniltabilir, genis borsa
+    ortalamasi bunu yumusatir."""
+    pair = f"{coin}USDT"
+    rates = {}
+
+    def _binance():
+        try:
+            r = requests.get("https://fapi.binance.com/fapi/v1/premiumIndex",
+                             params={"symbol": pair}, timeout=6).json()
+            rates["Binance"] = float(r["lastFundingRate"]) * 100
+        except Exception:
+            pass
+
+    def _bybit():
+        try:
+            r = requests.get("https://api.bybit.com/v5/market/tickers",
+                             params={"category": "linear", "symbol": pair}, timeout=6).json()
+            rates["Bybit"] = float(r["result"]["list"][0]["fundingRate"]) * 100
+        except Exception:
+            pass
+
+    def _okx():
+        try:
+            r = requests.get("https://www.okx.com/api/v5/public/funding-rate",
+                             params={"instId": f"{coin}-USDT-SWAP"}, timeout=6).json()
+            rates["OKX"] = float(r["data"][0]["fundingRate"]) * 100
+        except Exception:
+            pass
+
+    def _bitget():
+        try:
+            r = requests.get("https://api.bitget.com/api/v2/mix/market/current-fund-rate",
+                             params={"symbol": pair, "productType": "usdt-futures"}, timeout=6).json()
+            rates["Bitget"] = float(r["data"][0]["fundingRate"]) * 100
+        except Exception:
+            pass
+
+    def _gate():
+        try:
+            d = requests.get(f"https://api.gateio.ws/api/v4/futures/usdt/contracts/{coin}_USDT",
+                             timeout=6).json()
+            rates["Gate"] = float(d["funding_rate"]) * 100
+        except Exception:
+            pass
+
+    def _htx():
+        try:
+            r = requests.get("https://api.hbdm.com/linear-swap-api/v1/swap_funding_rate",
+                             params={"contract_code": f"{coin}-USDT"}, timeout=6).json()
+            rates["HTX"] = float(r["data"]["funding_rate"]) * 100
+        except Exception:
+            pass
+
+    def _kucoin():
+        try:
+            # KuCoin BTC icin "XBT" ISO-4217-stili kod kullanir, "BTC" degil.
+            symbol = f"{'XBT' if coin == 'BTC' else coin}USDTM"
+            d = requests.get(f"https://api-futures.kucoin.com/api/v1/contracts/{symbol}",
+                             timeout=6).json()["data"]
+            rates["KuCoin"] = float(d["fundingFeeRate"]) * 100
+        except Exception:
+            pass
+
+    def _hyperliquid():
+        try:
+            r = requests.post("https://api.hyperliquid.xyz/info",
+                              json={"type": "metaAndAssetCtxs"}, timeout=8).json()
+            universe, ctxs = r[0]["universe"], r[1]
+            idx = next((i for i, u in enumerate(universe) if u["name"] == coin), None)
+            if idx is not None:
+                # Hyperliquid fonlamasi SAATLIK'tir; digerleri 8 saatlikle karsilastirilabilir
+                # olsun diye x8 ile normalize edilir.
+                rates["Hyperliquid"] = float(ctxs[idx]["funding"]) * 100 * 8
+        except Exception:
+            pass
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as ex:
+        for fut in [ex.submit(f) for f in
+                    (_binance, _bybit, _okx, _bitget, _gate, _htx, _kucoin, _hyperliquid)]:
+            try:
+                fut.result(timeout=10)
+            except Exception:
+                pass
+
+    if not rates:
+        return {}
+    return {"funding_rate_pct": sum(rates.values()) / len(rates),
+            "funding_by_exchange": rates}
+
+
+@_cache(ttl=60, show_spinner=False)
+def fetch_top_trader_ratios(coin: str, period: str = "15m") -> dict:
+    """Coinglass'in 'Top Trader Long/Short Ratio' metriginin karsiligi.
+
+    Kalabalik (global) hesap oranindan FARKLIDIR: bu, borsanin en buyuk
+    bakiyeli hesaplarinin pozisyonudur - yani 'akilli para'. Kalabaligin
+    tersi okunurken, buyuk oyuncunun yonu TAKIP edilir.
+    """
+    pair = f"{coin}USDT"
+    out = {}
+
+    def _get(path, key):
+        try:
+            r = requests.get(f"https://fapi.binance.com/futures/data/{path}",
+                             params={"symbol": pair, "period": period, "limit": 3}, timeout=6)
+            data = r.json()
+            if isinstance(data, list) and data:
+                out[key] = float(data[-1]["longShortRatio"])
+                out[key + "_long_pct"] = float(data[-1]["longAccount"]) * 100
+        except Exception:
+            pass
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        futs = [ex.submit(_get, "topLongShortPositionRatio", "top_position_ratio"),
+                ex.submit(_get, "topLongShortAccountRatio", "top_account_ratio")]
+        for fut in futs:
+            try:
+                fut.result(timeout=9)
+            except Exception:
+                pass
+    return out
+
+
+@_cache(ttl=30, show_spinner=False)
+def fetch_coinbase_premium(coin: str) -> dict:
+    """Coinglass'in 'Coinbase Premium Index' karsiligi.
+
+    Coinbase agirlikli olarak ABD kurumsal/bireysel talebini yansitir. Coinbase
+    fiyati Binance'in uzerindeyse ABD tarafinda alim baskisi var demektir.
+    """
+    try:
+        cb = requests.get(f"https://api.exchange.coinbase.com/products/{coin}-USD/ticker",
+                          timeout=6).json()
+        cb_price = float(cb["price"])
+    except Exception:
+        return {}
+    try:
+        bn = requests.get("https://api.binance.com/api/v3/ticker/price",
+                          params={"symbol": f"{coin}USDT"}, timeout=6).json()
+        bn_price = float(bn["price"])
+    except Exception:
+        return {}
+    if bn_price <= 0:
+        return {}
+    return {"coinbase_premium_pct": (cb_price - bn_price) / bn_price * 100,
+            "coinbase_price": cb_price, "binance_price": bn_price}
+
+
+@_cache(ttl=15, show_spinner=False)
+def fetch_futures_basis(coin: str) -> dict:
+    """Coinglass'in 'Futures Basis' metriginin karsiligi: vadeli fiyatin spot
+    fiyata gore priminin/iskontosunun yuzdesi.
+
+    Pozitif basis (contango) -> piyasa vadeli tarafta LONG icin prim odemeye
+    razi, yapisal olarak boga egilimli. Negatif basis (backwardation) -> panik
+    satisi/short baskisi, ayi egilimli. Fonlama oranindan FARKLIDIR: fonlama
+    8 saatlik donemsel odemedir, basis ise ANLIK fiyat farkidir.
+    """
+    pair = f"{coin}USDT"
+    try:
+        spot = float(requests.get("https://api.binance.com/api/v3/ticker/price",
+                                  params={"symbol": pair}, timeout=6).json()["price"])
+        fut = float(requests.get("https://fapi.binance.com/fapi/v1/premiumIndex",
+                                 params={"symbol": pair}, timeout=6).json()["markPrice"])
+    except Exception:
+        return {}
+    if spot <= 0:
+        return {}
+    return {"basis_pct": (fut - spot) / spot * 100, "spot_price": spot, "futures_price": fut}
+
+
+@_cache(ttl=30, show_spinner=False)
+def fetch_spot_futures_volume_ratio(coin: str) -> dict:
+    """Spot ve vadeli 24s hacmi karsilastirir - piyasa katiliminin gercek
+    yatirimdan mi (spot) yoksa kaldiracli spekulasyondan mi (vadeli) agirlikli
+    oldugunu gosterir. Coinglass'in katilim/hacim panellerinin ucretsiz karsiligi.
+    """
+    pair = f"{coin}USDT"
+    try:
+        spot_v = float(requests.get("https://api.binance.com/api/v3/ticker/24hr",
+                                    params={"symbol": pair}, timeout=6).json()["quoteVolume"])
+        fut_v = float(requests.get("https://fapi.binance.com/fapi/v1/ticker/24hr",
+                                   params={"symbol": pair}, timeout=6).json()["quoteVolume"])
+    except Exception:
+        return {}
+    total = spot_v + fut_v
+    if total <= 0:
+        return {}
+    return {"spot_volume_usd": spot_v, "futures_volume_usd": fut_v,
+            "futures_volume_share_pct": fut_v / total * 100}
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -276,19 +676,8 @@ def fetch_exchange_derivatives(symbol: str, timeframe: str = "15m") -> dict:
         return {"taker_buy_usd": buy, "taker_sell_usd": sell,
                 "taker_delta_pct": ((buy - sell) / total * 100) if total else 0.0}
 
-    def _funding():
-        try:
-            r = requests.get("https://fapi.binance.com/fapi/v1/premiumIndex",
-                             params={"symbol": pair}, timeout=6)
-            if r.status_code != 200:
-                return {}
-            return {"funding_rate_pct": float(r.json().get("lastFundingRate", 0)) * 100}
-        except Exception:
-            return {}
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
-        futures = [ex.submit(f) for f in (_oi, _ls, _taker, _funding)]
-        for fut in futures:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+        for fut in [ex.submit(f) for f in (_oi, _ls, _taker)]:
             try:
                 out.update(fut.result(timeout=10) or {})
             except Exception:
@@ -296,7 +685,36 @@ def fetch_exchange_derivatives(symbol: str, timeframe: str = "15m") -> dict:
 
     if not any(k in out for k in ("oi_now", "ls_ratio", "taker_delta_pct")):
         return {}
+
+    # Coinglass'in sundugu diger veri setlerinin ucretsiz karsiliklari - Coinglass
+    # anahtari olsun olmasin HER ZAMAN eklenir (bunlar borsalarin kendi genel
+    # uc noktalaridir, Coinglass'e ozel degildir).
+    out.update(_fetch_free_derivative_extras(coin, period))
     return out
+
+
+def _fetch_free_derivative_extras(coin: str, period: str) -> dict:
+    """Coinglass anahtari olsun olmasin her zaman calisan, borsalarin genel
+    uc noktalarindan gelen ek veri setleri (likidasyon, cok borsali OI/fonlama,
+    buyuk oyuncu orani, Coinbase primi, basis, spot/vadeli hacim orani)."""
+    extras = {}
+    fetchers = {
+        "funding": lambda: fetch_aggregated_funding(coin),
+        "oi_agg": lambda: fetch_aggregated_open_interest(coin),
+        "liq": lambda: fetch_liquidations(coin),
+        "top": lambda: fetch_top_trader_ratios(coin, period),
+        "premium": lambda: fetch_coinbase_premium(coin),
+        "basis": lambda: fetch_futures_basis(coin),
+        "volshare": lambda: fetch_spot_futures_volume_ratio(coin),
+    }
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(fetchers)) as ex:
+        futs = {name: ex.submit(fn) for name, fn in fetchers.items()}
+        for name, fut in futs.items():
+            try:
+                extras.update(fut.result(timeout=12) or {})
+            except Exception:
+                pass
+    return extras
 
 
 def fetch_derivatives_matrix(symbol: str, timeframe: str = "15m") -> dict:
@@ -366,13 +784,17 @@ def fetch_dominance_matrix() -> dict:
 # ─────────────────────────────────────────────────────────────────
 # HARMANLANMIS PIYASA YONU - IKI PANELIN DE ORTAK KARAR KAYNAGI
 # ─────────────────────────────────────────────────────────────────
-# Agirliklar toplami 100. Pozitif puan = LONG lehine, negatif = SHORT lehine.
-W_TAKER = 28      # Agresif alici/satici akisi - en dogrudan yon sinyali
-W_OI = 18         # Acik pozisyon degisimi - trendin arkasindaki para
-W_LIQ = 18        # Likidasyon dengesizligi - hangi taraf temizlendi
-W_LS = 12         # Kalabalik hesap orani - TERSINE (contrarian) okunur
-W_FUNDING = 12    # Fonlama orani - asiri kaldirac TERSINE okunur
+# Agirliklar toplami TAM 100 olmali (coverage_pct bunun uzerinden hesaplanir).
+W_TAKER = 18      # Agresif alici/satici akisi - en dogrudan yon sinyali
+W_OI = 10         # Acik pozisyon degisimi - trendin arkasindaki para
+W_LIQ = 14        # Likidasyon dengesizligi - hangi taraf temizlendi (OKX gercek veri)
+W_TOP = 14        # Buyuk oyuncu (top trader) pozisyonu - akilli para, YONU TAKIP EDILIR
+W_LS = 8          # Kalabalik hesap orani - TERSINE (contrarian) okunur
+W_FUNDING = 8     # Fonlama orani (3 borsa ort.) - asiri kaldirac TERSINE okunur
+W_PREMIUM = 6     # Coinbase primi - ABD kurumsal talebi
+W_BASIS = 10      # Vadeli-spot fiyat farki (contango/backwardation)
 W_DOM = 12        # Dolar dominansi - nakite kacis mi, kriptoya akis mi
+assert W_TAKER + W_OI + W_LIQ + W_TOP + W_LS + W_FUNDING + W_PREMIUM + W_BASIS + W_DOM == 100
 
 
 def compute_market_bias(symbol: str, timeframe: str = "15m") -> dict:
@@ -411,15 +833,29 @@ def compute_market_bias(symbol: str, timeframe: str = "15m") -> dict:
                        f"%{oi:+.2f} ({'Yeni para giriyor' if oi > 0 else 'Pozisyon kapanıyor'})",
                        "pass" if abs(oi) > 0.5 else "warn", contrib))
 
-    # 3) Likidasyon dengesizligi
-    if "liq_skew_pct" in deriv:
+    # 3) Likidasyon dengesizligi (OKX gercek likidasyon emirleri)
+    if "liq_skew_pct" in deriv and deriv.get("liq_count", 0) > 0:
         lq = deriv["liq_skew_pct"]
         contrib = max(-1.0, min(1.0, lq / 50.0)) * W_LIQ
         score += contrib
         used_weight += W_LIQ
-        checks.append(("Likidasyon Dengesizliği",
-                       f"%{lq:+.1f} ({'Shortlar patlıyor' if lq > 0 else 'Longlar patlıyor'})",
+        _ll = deriv.get("liq_long_usd", 0.0)
+        _sl = deriv.get("liq_short_usd", 0.0)
+        checks.append(("Likidasyon Dengesizliği (son 1 saat)",
+                       f"Long ${_ll:,.0f} / Short ${_sl:,.0f} "
+                       f"({'Shortlar patlıyor' if lq > 0 else 'Longlar patlıyor'})",
                        "pass" if abs(lq) > 15 else "warn", contrib))
+
+    # 3b) Buyuk oyuncu (top trader) pozisyon orani - kalabaligin AKSINE, bu yon TAKIP edilir
+    if "top_position_ratio" in deriv:
+        tp = deriv["top_position_ratio"]
+        edge = tp - 1.0
+        contrib = max(-1.0, min(1.0, edge / 0.8)) * W_TOP
+        score += contrib
+        used_weight += W_TOP
+        checks.append(("Büyük Oyuncu Pozisyonu (akıllı para)",
+                       f"{tp:.2f} ({'Büyükler LONG tarafta' if edge > 0 else 'Büyükler SHORT tarafta'})",
+                       "pass" if abs(edge) > 0.2 else "warn", contrib))
 
     # 4) Kalabalik long/short orani - TERSINE okunur (kalabalik genelde yanilir)
     if "ls_ratio" in deriv and deriv["ls_ratio"]:
@@ -441,6 +877,26 @@ def compute_market_bias(symbol: str, timeframe: str = "15m") -> dict:
         checks.append(("Fonlama Oranı (ters sinyal)",
                        f"%{fr:+.4f} ({'Longlar ödüyor' if fr > 0 else 'Shortlar ödüyor'})",
                        "warn" if abs(fr) > 0.03 else "pass", contrib))
+
+    # 5b) Coinbase Primi - ABD kurumsal/bireysel talebi (BTC/ETH disinda genelde veri yok)
+    if "coinbase_premium_pct" in deriv:
+        cbp = deriv["coinbase_premium_pct"]
+        contrib = max(-1.0, min(1.0, cbp / 0.15)) * W_PREMIUM
+        score += contrib
+        used_weight += W_PREMIUM
+        checks.append(("Coinbase Primi (ABD talebi)",
+                       f"%{cbp:+.3f} ({'ABD alım baskısı' if cbp > 0 else 'ABD satış baskısı'})",
+                       "pass" if abs(cbp) > 0.05 else "warn", contrib))
+
+    # 5c) Vadeli-Spot Basis - pozitif (contango) yapisal boga, negatif (backwardation) panik/ayi
+    if "basis_pct" in deriv:
+        bp = deriv["basis_pct"]
+        contrib = max(-1.0, min(1.0, bp / 0.05)) * W_BASIS
+        score += contrib
+        used_weight += W_BASIS
+        checks.append(("Vadeli-Spot Basis",
+                       f"%{bp:+.4f} ({'Contango (yapısal boğa)' if bp > 0 else 'Backwardation (panik/ayı)'})",
+                       "pass" if abs(bp) > 0.02 else "warn", contrib))
 
     # 6) Dolar dominansi - yukseliyorsa nakite kacis (SHORT), dusuyorsa kriptoya akis (LONG)
     if dom.get("source") != "UNAVAILABLE":
@@ -639,7 +1095,7 @@ def reconcile_with_bias(ai_direction: str, ai_confidence: float, bias: dict) -> 
 # ─────────────────────────────────────────────────────────────────
 SOURCE_LABELS = {
     "COINGLASS": ("Coinglass (canlı)", "#0e7490"),
-    "BORSA_TOPLAMI": ("Borsa Türev Toplamı (Binance/Bybit/OKX)", "#14b8a6"),
+    "BORSA_TOPLAMI": ("8 Borsa Toplamı (Binance/Bybit/OKX/Bitget/Gate/HTX/KuCoin/Hyperliquid)", "#14b8a6"),
     "VERI_YOK": ("Veri alınamadı", "#dc2626"),
 }
 
@@ -649,7 +1105,10 @@ def render_market_intel_card(bias: dict, reconciled: dict = None) -> None:
     if st is None:
         return
 
+    n_ex = len(bias.get("derivatives", {}).get("oi_by_exchange", {}))
     src_label, src_color = SOURCE_LABELS.get(bias.get("source"), ("Bilinmiyor", "#94a3b8"))
+    if bias.get("source") == "BORSA_TOPLAMI" and n_ex:
+        src_label = f"{n_ex} Borsa Toplamı (OI/Fonlama)"
     score = bias.get("score", 0.0)
     direction = bias.get("direction", "NÖTR")
     dir_color = "#16a34a" if direction == "LONG" else ("#dc2626" if direction == "SHORT" else "#94a3b8")
