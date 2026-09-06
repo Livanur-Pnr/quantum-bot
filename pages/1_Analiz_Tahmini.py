@@ -905,7 +905,7 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
     # cikti (edge sadece +12.3 - neredeyse basabas). TP=2.0x/SL=1.0x (AYNI R:R=2:1 orani,
     # daha dar/isabetli mesafeler) hem 30 gunde (n=30, isabet %80.0, edge +46.7) hem 90
     # gunluk BAGIMSIZ veride (n=40, isabet %70.0, edge +36.7) belirgin sekilde daha iyi
-    # cikti. NOT: sayfa 2'de (2_Analiz_Tahmini.py) AYNI oran (2:1) BAGIMSIZ olarak yine
+    # cikti. NOT: sayfa 2'de (2_Canlı_Gösterge.py) AYNI oran (2:1) BAGIMSIZ olarak yine
     # en iyi cikmisti - bu tesadufi degil, tutarli bir bulgu. DURUSTLUK: 90 gunluk ay-ay
     # kirilimda varyans yuksek (Haziran %80.8, Agustos %12.5) - toplam sonuc kismen
     # Haziran'a dayaniyor, mutlak "kanitlanmis" degil ama mevcut ayardan kesinlikle daha iyi.
@@ -1225,7 +1225,7 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
 # (yuzde bazli) SL/TP mesafe sinirlari. Yuzde bazli oldugu icin herhangi bir coinde (ucuz veya
 # pahali farketmeksizin) esdeger sikilikte, mantikli bir mesafe uretir - sabit dolar deger
 # kullanilsaydi ucuz coinlerde (orn. PEPE) anlamsiz/imkansiz sonuclar cikardi. Bu tablo
-# pages/2_Analiz_Tahmini.py'deki ayni isimli tabloyla senkron tutulmalidir.
+# pages/2_Canlı_Gösterge.py'deki ayni isimli tabloyla senkron tutulmalidir.
 TIMEFRAME_RISK_BOUNDS_PCT = {
     "Min1":   {"sl_min": 0.00259, "sl_max": 0.00518, "tp_min": 0.00389, "tp_max": 0.00648},
     "Min15":  {"sl_min": 0.00389, "sl_max": 0.00648, "tp_min": 0.00648, "tp_max": 0.01295},
