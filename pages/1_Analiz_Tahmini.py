@@ -1638,10 +1638,33 @@ with st.sidebar:
     # onu asıl anahtara aktarıp temizliyoruz.
     if "active_timeframe_label" not in st.session_state:
         st.session_state["active_timeframe_label"] = "1 Dakika (Scalp)"
+
+    # ZAMAN DILIMI SENKRONIZASYONU (Canlı Gösterge ile ortak, coin senkronizasyonuyla
+    # AYNI pull-then-push deseni): Canlı Gösterge'de zaman dilimi degistirildiyse
+    # (shared_timeframe_ccxt burada son senkronize edilenden farkli) buraya da yansit.
+    # Canlı Gösterge'nin "30m"/"1d" secenekleri bu sayfada KARSILIGI OLMADIGI icin
+    # (bu sayfa sadece 1m/5m/15m/1h/4h destekliyor) o degerler sessizce atlanir - bu
+    # sayfanin kendi zaman dilimi degismeden kalir.
+    _ccxt_to_tf_label = {
+        "1m": "1 Dakika (Scalp)", "5m": "5 Dakika (Day Trade)", "15m": "15 Dakika (Swing)",
+        "1h": "1 Saat (Trend)", "4h": "4 Saatlik (Saatlik Scalp / Trend)",
+    }
+    _shared_tf_ccxt = st.session_state.get("shared_timeframe_ccxt")
+    if _shared_tf_ccxt in _ccxt_to_tf_label and _shared_tf_ccxt != st.session_state.get("p1_last_synced_tf"):
+        st.session_state["_pending_timeframe"] = _ccxt_to_tf_label[_shared_tf_ccxt]
+        st.session_state["p1_last_synced_tf"] = _shared_tf_ccxt
+
     if "_pending_timeframe" in st.session_state:
         st.session_state["active_timeframe_label"] = st.session_state.pop("_pending_timeframe")
     selected_tf_label = st.selectbox("⏱️ Zaman Dilimi:", list(timeframe_map.keys()), key="active_timeframe_label")
     active_interval = timeframe_map[selected_tf_label]
+
+    # ZAMAN DILIMI SENKRONIZASYONU (devam): nihai secilen zaman dilimini Canlı
+    # Gösterge'nin de okuyacagi ortak degere (ccxt formatinda) yaz.
+    _p1_tf_ccxt = INTERVAL_MAP.get(active_interval, "1m")
+    if st.session_state.get("shared_timeframe_ccxt") != _p1_tf_ccxt:
+        st.session_state["shared_timeframe_ccxt"] = _p1_tf_ccxt
+    st.session_state["p1_last_synced_tf"] = _p1_tf_ccxt
 
     # ONEMLI: Kaldirac artik sabit secenekler yerine serbest metin/sayi girisi - kullanici
     # borsanin izin verdigi herhangi bir degeri (orn. 37x, 63x) yazabilir. SL/TP hesaplamasi

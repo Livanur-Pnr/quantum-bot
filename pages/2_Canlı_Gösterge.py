@@ -1031,7 +1031,23 @@ def main():
             st.session_state["shared_coin_base"] = _p2_base
         st.session_state["p2_last_synced_shared"] = _p2_base
 
-        tf = st.selectbox("⏱️ Z. Dilimi", ["15m", "30m", "1h", "4h", "1d"], index=0)
+        # ZAMAN DILIMI SENKRONIZASYONU (Analiz Tahmini ile ortak, coin senkronizasyonuyla
+        # AYNI pull-then-push deseni): Analiz Tahmini'nde zaman dilimi degistirildiyse
+        # (shared_timeframe_ccxt burada son senkronize edilenden farkli) buraya da
+        # yansit. Analiz Tahmini'nin "1m"/"5m" secenekleri bu sayfada KARSILIGI OLMADIGI
+        # icin (page2 modeli sadece 15m icin backtest ile dogrulandi) o degerler
+        # sessizce atlanir - bu sayfanin kendi zaman dilimi degismeden kalir.
+        _TF_OPTIONS = ["15m", "30m", "1h", "4h", "1d"]
+        _shared_tf = st.session_state.get("shared_timeframe_ccxt")
+        if _shared_tf in _TF_OPTIONS and _shared_tf != st.session_state.get("p2_last_synced_tf"):
+            st.session_state["p2_selected_tf"] = _shared_tf
+        _current_tf = st.session_state.get("p2_selected_tf", "15m")
+        _tf_default_idx = _TF_OPTIONS.index(_current_tf) if _current_tf in _TF_OPTIONS else 0
+        tf = st.selectbox("⏱️ Z. Dilimi", _TF_OPTIONS, index=_tf_default_idx)
+        st.session_state["p2_selected_tf"] = tf
+        if st.session_state.get("shared_timeframe_ccxt") != tf:
+            st.session_state["shared_timeframe_ccxt"] = tf
+        st.session_state["p2_last_synced_tf"] = tf
         
         with st.expander("🛠️ Kurumsal ML & Risk Parametreleri", expanded=False):
             # ONEMLI - BACKTEST ILE DOGRULANMIS VARSAYILANLAR: Eski varsayilanlar
