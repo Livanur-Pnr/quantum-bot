@@ -1019,34 +1019,50 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         checks.append(("AI Model Güven Seviyesi", f"Kararsız (%{confidence:.1f})", "warn", 8))
         confluence_score += 8
         
-    # 2. Makro Trend Onayı (EMA 200) - SERT TREND-UYUM FILTRESI
-    # ONEMLI - BACKTEST KANITI (2026-09-07): 1 yillik gercek-turev verisiyle olculdu -
-    # trende KARSI (EMA200 uyumsuz) sinyaller istatistiksel olarak ANLAMSIZDI (z=+0.76,
-    # n=22, isabet %40.9), trend-UYUMLU sinyaller GUCLU (z=+7.24, n=159, isabet %60.4).
-    # Trend-uyum filtresi UYGULANINCA genel isabet %58.0 -> %65.9'a cikti (z=+6.25, n=82).
+    # 2. Makro Trend Onayı (EMA 200) - TAMPONLU (HYSTERESIS) SERT TREND-UYUM FILTRESI
+    # ONEMLI - BACKTEST KANITI (2026-09-07): 1 yillik gercek-turev verisiyle olculdu.
+    # ILK VERSIYON (tamponsuz, close>ema_200 siniri): trend yonu GUNDE ORTALAMA 3.67 KEZ
+    # degisiyordu (fiyat EMA200 civarinda "whipsaw" yapiyor) - bu, kullanicinin haklı
+    # olarak sordugu "surekli degisen, guvenilmez" sorununa yol aciyordu. Isabet %65.9
+    # idi (n=82, z=+6.25).
+    # DUZELTME: fiyatin EMA200'den EN AZ %1 uzaklasmasi sart kosuldu (tampon bolgesinde
+    # - yani EMA200'e cok yakinken - HER IKI yon de reddedilir, belirsiz sayilir). Bu:
+    #   - yon degisim sikligini ~GUNDE 0.19 KEZE dusurdu (yaklasik her 5 gunde bir)
+    #   - isabeti %65.9 -> %82.4'e YUKSELTTI (n=51, edge +49.1, z=+7.43)
+    # State/hafiza GEREKTIRMEYEN (stateless) bir tasarim bilerek tercih edildi - Streamlit'in
+    # her mumda yeniden calisan mimarisinde bir "onceki durumu hatirla" mekanizmasi hataya
+    # daha acik olurdu; bu versiyon sadece o anki fiyat/EMA200 mesafesine bakar.
     #
     # DURUSTLUK NOTU / BILINEN RISK: Bu 1 yillik test doneminde BTC kesintisiz dustu
-    # (%30.9) - trend HIC yon degistirmedi, bu yuzden "trend-uyumlu LONG" senaryosu
-    # NEREDEYSE HIC gozlemlenemedi (filtre sonrasi sadece 3 LONG islem kaldi). Piyasa
-    # yukselise donerse bu filtrenin GERCEKTEN ise yarayip yaramayacagi KANITLANMAMIS -
-    # sadece "downtrend'de SHORT'a agirlik ver" varsayimimizin DOLAYLI bir onayi olabilir.
-    # forward_test.py canli izleyicisi bu davranisi zaman icinde dogrulayacak; kotu
-    # sinyal gorulurse bu blok GERI ALINMALI (once eski warn-only haline dondurulerek).
-    is_macro_bull = close > ema_200
+    # (%30.9) - trend HIC kalici sekilde LONG yonune donmedi, bu yuzden "trend-uyumlu
+    # LONG" senaryosu neredeyse hic gozlemlenemedi. Piyasa yukselise donerse bu filtrenin
+    # GERCEKTEN ise yarayip yaramayacagi KANITLANMAMIS. forward_test.py canli izleyicisi
+    # bu davranisi zaman icinde dogrulayacak; kotu sinyal gorulurse bu blok GERI ALINMALI.
+    EMA_TREND_BUFFER_PCT = 1.0
+    dist_ema200_pct = (close - ema_200) / (ema_200 + 1e-9) * 100
+    if dist_ema200_pct > EMA_TREND_BUFFER_PCT:
+        macro_trend_state = 1   # net boga
+    elif dist_ema200_pct < -EMA_TREND_BUFFER_PCT:
+        macro_trend_state = -1  # net ayi
+    else:
+        macro_trend_state = 0   # tampon bolgesi - belirsiz, whipsaw riski
+
     if raw_dir == "LONG":
-        if is_macro_bull:
-            checks.append(("EMA 200 Makro Trend", "Boğa (Fiyat > EMA200)", "pass", 20))
+        if macro_trend_state == 1:
+            checks.append(("EMA 200 Makro Trend", f"Net Boğa (Fiyat EMA200'den %{dist_ema200_pct:.2f} uzakta)", "pass", 20))
             confluence_score += 20
         else:
-            checks.append(("EMA 200 Makro Trend", "Tepki / Düzeltme Dalgası -> Trende Karşı, LONG İptal!", "fail", 0))
+            reason = "Tampon Bölgesi (EMA200'e Çok Yakın, Belirsiz)" if macro_trend_state == 0 else "Tepki / Düzeltme Dalgası"
+            checks.append(("EMA 200 Makro Trend", f"{reason} -> Trende Karşı/Belirsiz, LONG İptal!", "fail", 0))
             confluence_score -= 25
             raw_dir = "NEUTRAL"
     else:
-        if not is_macro_bull:
-            checks.append(("EMA 200 Makro Trend", "Ayı (Fiyat < EMA200)", "pass", 20))
+        if macro_trend_state == -1:
+            checks.append(("EMA 200 Makro Trend", f"Net Ayı (Fiyat EMA200'den %{abs(dist_ema200_pct):.2f} uzakta)", "pass", 20))
             confluence_score += 20
         else:
-            checks.append(("EMA 200 Makro Trend", "Karşı Trend Satış Dalgası -> Trende Karşı, SHORT İptal!", "fail", 0))
+            reason = "Tampon Bölgesi (EMA200'e Çok Yakın, Belirsiz)" if macro_trend_state == 0 else "Karşı Trend Satış Dalgası"
+            checks.append(("EMA 200 Makro Trend", f"{reason} -> Trende Karşı/Belirsiz, SHORT İptal!", "fail", 0))
             confluence_score -= 25
             raw_dir = "NEUTRAL"
             
