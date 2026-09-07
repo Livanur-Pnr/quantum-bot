@@ -996,6 +996,13 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
     prob_short = ai_res["prob_short"]
     raw_dir = ai_res["raw_dir"]
     confidence = ai_res.get("confidence", 50.0)
+    # ONEMLI - KULLANICI GERI BILDIRIMI: nihai sinyal NEUTRAL'e cekildiginde ekranda
+    # SADECE genel bir "GÜVEN" yuzdesi kaliyordu, hangi YONE ait oldugu belli olmuyordu
+    # ("SİNYAL İPTAL EDİLDİ" yaziyor ama %74 neyin guveni?). raw_dir asagida filtreler
+    # tarafindan NEUTRAL'e ezilmeden ONCE, AI'nin HAM (filtresiz) yonu ve güveni burada
+    # sabitleniyor - boylece UI, iptal edilse bile "AI aslinda SHORT dusunuyordu, %74.4
+    # eminidi" diyebiliyor.
+    original_raw_dir = raw_dir
     
     rsi = float(latest_row.get("rsi", 50.0))
     macd_diff = float(latest_row.get("macd_diff", 0.0))
@@ -1272,6 +1279,7 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         "checks": checks,
         "confidence": confidence,
         "reconciled": reconciled,
+        "original_raw_dir": original_raw_dir,
     }
 
 
@@ -1993,6 +2001,22 @@ def render_quantum_terminal():
 
             conf_pct = confluence['confidence']
             ring_style = ring_grad.format(p=conf_pct)
+
+            # ONEMLI - KULLANICI GERI BILDIRIMI: sinyal guvenlik filtresi tarafindan
+            # NEUTRAL'e cekildiginde, kullanici "%74 GÜVEN" yazisinin HANGI yone ait
+            # oldugunu asagidaki LONG/SHORT satirindan kendisi cikarmak zorunda
+            # kalıyordu. Sinyal iptal edildiyse AI'nin ham (filtre-oncesi) yonunu ve
+            # o yondeki güvenini acikca yaziyoruz.
+            orig_dir = confluence.get("original_raw_dir")
+            leaning_html = ""
+            if final_sig == "NEUTRAL" and orig_dir in ("LONG", "SHORT"):
+                _lean_color = "#16a34a" if orig_dir == "LONG" else "#dc2626"
+                _lean_word = "YÜKSELİŞ (LONG)" if orig_dir == "LONG" else "DÜŞÜŞ (SHORT)"
+                leaning_html = f'''<div class="ai-lean-line" style="margin-top:8px; font-size:12px; color:#5f7d7a;">
+                    🔎 AI'nin Ham Eğilimi: <b style="color:{_lean_color};">{_lean_word}</b> yönünde
+                    <b style="color:{_lean_color};">%{conf_pct:.1f}</b> emin — güvenlik filtresi tarafından iptal edildi
+                </div>'''
+
             st.markdown(f"""
             <div class="ai-signal-card {dir_cls}">
                 <div class="ai-signal-label">AI İŞLEM SİNYALİ</div>
@@ -2004,6 +2028,7 @@ def render_quantum_terminal():
                     </div>
                 </div>
                 <div class="ai-prob-line">LONG: <b style="color:#16a34a;">%{ai_result['prob_long']*100:.1f}</b> &nbsp;|&nbsp; SHORT: <b style="color:#dc2626;">%{ai_result['prob_short']*100:.1f}</b></div>
+                {leaning_html}
             </div>
             """, unsafe_allow_html=True)
 
