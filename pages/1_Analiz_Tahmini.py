@@ -990,7 +990,7 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
         "active_features": final_features
     }
 
-def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_data: dict, usdt_dom: dict = None, sr_levels: dict = None, market_bias: dict = None) -> dict:
+def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_data: dict, usdt_dom: dict = None, sr_levels: dict = None, market_bias: dict = None, interval: str = "1m") -> dict:
     """Yapay zeka çıktısını teknik indikatörler, trend, tahta baskısı, TradingView Dolar Dominansı (% USDT.D) ve Majör Destek/Direnç Seviyeleri ile çapraz doğrulayarak sahte sinyalleri eler."""
     prob_long = ai_res["prob_long"]
     prob_short = ai_res["prob_short"]
@@ -1019,26 +1019,41 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         checks.append(("AI Model Güven Seviyesi", f"Kararsız (%{confidence:.1f})", "warn", 8))
         confluence_score += 8
         
-    # 2. Makro Trend Onayı (EMA 200) - TAMPONLU (HYSTERESIS) SERT TREND-UYUM FILTRESI
-    # ONEMLI - BACKTEST KANITI (2026-09-07): 1 yillik gercek-turev verisiyle olculdu.
-    # ILK VERSIYON (tamponsuz, close>ema_200 siniri): trend yonu GUNDE ORTALAMA 3.67 KEZ
-    # degisiyordu (fiyat EMA200 civarinda "whipsaw" yapiyor) - bu, kullanicinin haklı
-    # olarak sordugu "surekli degisen, guvenilmez" sorununa yol aciyordu. Isabet %65.9
-    # idi (n=82, z=+6.25).
-    # DUZELTME: fiyatin EMA200'den EN AZ %1 uzaklasmasi sart kosuldu (tampon bolgesinde
-    # - yani EMA200'e cok yakinken - HER IKI yon de reddedilir, belirsiz sayilir). Bu:
-    #   - yon degisim sikligini ~GUNDE 0.19 KEZE dusurdu (yaklasik her 5 gunde bir)
-    #   - isabeti %65.9 -> %82.4'e YUKSELTTI (n=51, edge +49.1, z=+7.43)
-    # State/hafiza GEREKTIRMEYEN (stateless) bir tasarim bilerek tercih edildi - Streamlit'in
-    # her mumda yeniden calisan mimarisinde bir "onceki durumu hatirla" mekanizmasi hataya
-    # daha acik olurdu; bu versiyon sadece o anki fiyat/EMA200 mesafesine bakar.
+    # 2. Makro Trend Onayı (EMA 200) - ZAMAN-DILIMINE-OZEL TAMPONLU TREND-UYUM FILTRESI
+    # ONEMLI - BACKTEST KANITI (2026-09-07, 5 ZAMAN DILIMININ HEPSINDE GERCEK 1 YILLIK/
+    # uzun-donem veriyle ayri ayri olculdu - TEK bir sabit esik TUM zaman dilimlerinde
+    # ISE YARAMIYOR, EMA200'un "hafizasi" zaman dilimine gore COK farklidir (1dk'da
+    # ~3.3 saat, 15dk'da ~50 saat, vs.):
+    #   1dk: tampon/olgunluk EKLENINCE 0 ISLEM URETIYORDU (tamamen islevsiz!) -> KALDIRILDI.
+    #        Ham trend (tamponsuz): n=15, isabet %93.3, edge+60.0, z=+4.93
+    #   5dk: AYRI VE FARKLI BIR SORUN VAR (trend filtresiyle ilgisiz) - modelin kendi
+    #        guven skoru bu zaman diliminde neredeyse hic esigi (%62) gecmiyor (32123
+    #        test noktasinda MAKSIMUM guven sadece %63.46) - trend filtresi degisikligi
+    #        bunu COZMEZ. Mevcut deger (tampon+olgunluk) KORUNDU ama bu bilinen bir
+    #        eksiklik - 5dk modu su an pratikte NEREDEYSE HIC sinyal uretmiyor.
+    #   15dk: TAMPON(%1)+OLGUNLUK(6sa) EN IYISI: n=44, isabet %90.9, edge+57.6, z=+8.11
+    #   1sa: tampon/olgunluk EKLEMEK ZARAR VERIYOR (isabet %57.8->%55.7 dusuyor) -> KALDIRILDI.
+    #        Ham trend (tamponsuz): n=218, isabet %57.8, edge+24.5, z=+7.67
+    #   4sa: TAMPON(%1)+OLGUNLUK(6sa) EN IYISI: n=155, isabet %53.5, edge+20.2, z=+5.35
+    # State/hafiza GEREKTIRMEYEN (stateless) tasarim korundu - Streamlit'in her mumda
+    # yeniden calisan mimarisinde "onceki durumu hatirla" mekanizmasi hataya daha acik olurdu.
     #
-    # DURUSTLUK NOTU / BILINEN RISK: Bu 1 yillik test doneminde BTC kesintisiz dustu
-    # (%30.9) - trend HIC kalici sekilde LONG yonune donmedi, bu yuzden "trend-uyumlu
-    # LONG" senaryosu neredeyse hic gozlemlenemedi. Piyasa yukselise donerse bu filtrenin
-    # GERCEKTEN ise yarayip yaramayacagi KANITLANMAMIS. forward_test.py canli izleyicisi
-    # bu davranisi zaman icinde dogrulayacak; kotu sinyal gorulurse bu blok GERI ALINMALI.
-    EMA_TREND_BUFFER_PCT = 1.0
+    # DURUSTLUK NOTU / BILINEN RISK: 1 yillik test doneminde BTC kesintisiz dustu (%30.9)
+    # - trend HIC kalici sekilde LONG yonune donmedi, "trend-uyumlu LONG" senaryosu
+    # neredeyse hic gozlemlenemedi. Piyasa yukselise donerse bu esiklerin GERCEKTEN ise
+    # yarayip yaramayacagi KANITLANMAMIS. forward_test.py canli izleyicisi zaman icinde
+    # dogrulayacak; kotu sinyal gorulurse ilgili zaman dilimi GERI ALINMALI.
+    TIMEFRAME_TREND_FILTER = {
+        "1m":  {"buffer_pct": 0.0, "min_age_hours": 0.0},
+        "5m":  {"buffer_pct": 1.0, "min_age_hours": 6.0},   # bilinen sorun yukarida - trend disi
+        "15m": {"buffer_pct": 1.0, "min_age_hours": 6.0},
+        "1h":  {"buffer_pct": 0.0, "min_age_hours": 0.0},
+        "4h":  {"buffer_pct": 1.0, "min_age_hours": 6.0},
+    }
+    _tf_cfg = TIMEFRAME_TREND_FILTER.get(interval, {"buffer_pct": 1.0, "min_age_hours": 6.0})
+    EMA_TREND_BUFFER_PCT = _tf_cfg["buffer_pct"]
+    MIN_TREND_AGE_HOURS = _tf_cfg["min_age_hours"]
+
     dist_ema200_pct = (close - ema_200) / (ema_200 + 1e-9) * 100
     if dist_ema200_pct > EMA_TREND_BUFFER_PCT:
         macro_trend_state = 1   # net boga
@@ -1047,11 +1062,6 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
     else:
         macro_trend_state = 0   # tampon bolgesi - belirsiz, whipsaw riski
 
-    # TREND OLGUNLUGU SARTI: rejim en az 6 saattir ayni yonde olmali (bkz. yorum
-    # yukarida, trend_age_hours hesaplamasi) - backtest'te isabeti %82.4 -> %90.9'a
-    # cikardi. Sutun yoksa (eski cagri yolu/uyumluluk) guvenli tarafta kalinip
-    # sart karsilanmamis sayilir.
-    MIN_TREND_AGE_HOURS = 6.0
     trend_age_hours = float(latest_row.get("trend_age_hours", 0.0))
     trend_mature = trend_age_hours >= MIN_TREND_AGE_HOURS
 
@@ -1709,7 +1719,7 @@ def render_quantum_terminal():
     # 4. Sahte Sinyal Filtresi ve Confluence Değerlendirmesi (USDT Dominance + Majör S/R Entegre)
     # ORTAK PIYASA YONU: Canli Gosterge paneliyle BIREBIR ayni fonksiyon/veri kaynagi.
     market_bias = market_intel.compute_market_bias(symbol_str, active_interval)
-    confluence = evaluate_confluence_and_filter(ai_result, latest_row, depth, usdt_dom, sr_levels, market_bias)
+    confluence = evaluate_confluence_and_filter(ai_result, latest_row, depth, usdt_dom, sr_levels, market_bias, interval=INTERVAL_MAP.get(active_interval, "1m"))
     
     # 4.1. Anlık Sinyal Dalgalanmasını Engelleme (Hysteresis & Signal Lock Engine)
     latched_key = f"latched_sig_{symbol_str}"
