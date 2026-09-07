@@ -961,7 +961,15 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
     
     p_long = float(raw_probs[classes.index(1)]) if 1 in classes else 0.0
     p_short = float(raw_probs[classes.index(-1)]) if -1 in classes else 0.0
-    
+    # ONEMLI - KULLANICI GERI BILDIRIMI (Canlı Gösterge'deki AYNI duzeltme): bu model de
+    # 3 SINIFLI (LONG/SHORT/NÖTR) egitiliyor (target: 1/-1/0), ama asagidaki normalizasyon
+    # NÖTR sinifinin ham olasiligini TAMAMEN ATIP kalan iki sinifi 100'e TAMAMLIYORDU - bu,
+    # model gercekte "%15 LONG / %10 SHORT / %75 NÖTR" dese bile ekranda "%60 LONG / %40
+    # SHORT" gibi YAPAY olarak kararli/guvenli gorunmesine yol aciyordu. Ham (normalize
+    # edilmeden ONCEKI) NÖTR payi burada saklanip UI'ya tasiniyor.
+    p_neutral_raw_frac = float(raw_probs[classes.index(0)]) if 0 in classes else 0.0
+    p_long_raw_frac, p_short_raw_frac = p_long, p_short
+
     total = p_long + p_short + 1e-9
     p_long = p_long / total
     p_short = p_short / total
@@ -987,7 +995,10 @@ def train_and_predict_quantum_ai(df_features: pd.DataFrame) -> dict:
         "raw_dir": final_dir,
         "status": "GÜÇLÜ HİZALAMA" if confidence > 65 else "ZAYIF SİNYAL",
         "confidence": confidence,
-        "active_features": final_features
+        "active_features": final_features,
+        "prob_neutral_raw": p_neutral_raw_frac * 100.0,
+        "prob_long_raw": p_long_raw_frac * 100.0,
+        "prob_short_raw": p_short_raw_frac * 100.0,
     }
 
 def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_data: dict, usdt_dom: dict = None, sr_levels: dict = None, market_bias: dict = None, interval: str = "1m") -> dict:
@@ -1003,7 +1014,10 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
     # sabitleniyor - boylece UI, iptal edilse bile "AI aslinda SHORT dusunuyordu, %74.4
     # eminidi" diyebiliyor.
     original_raw_dir = raw_dir
-    
+    original_prob_neutral_raw = ai_res.get("prob_neutral_raw", 0.0)
+    original_prob_long_raw = ai_res.get("prob_long_raw", prob_long * 100.0)
+    original_prob_short_raw = ai_res.get("prob_short_raw", prob_short * 100.0)
+
     rsi = float(latest_row.get("rsi", 50.0))
     macd_diff = float(latest_row.get("macd_diff", 0.0))
     close = float(latest_row.get("close", 1.0))
@@ -1280,6 +1294,9 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         "confidence": confidence,
         "reconciled": reconciled,
         "original_raw_dir": original_raw_dir,
+        "original_prob_neutral_raw": original_prob_neutral_raw,
+        "original_prob_long_raw": original_prob_long_raw,
+        "original_prob_short_raw": original_prob_short_raw,
     }
 
 
@@ -2033,11 +2050,29 @@ def render_quantum_terminal():
             orig_dir = confluence.get("original_raw_dir")
             leaning_html = ""
             if final_sig == "NEUTRAL" and orig_dir in ("LONG", "SHORT"):
-                _lean_color = "#16a34a" if orig_dir == "LONG" else "#dc2626"
-                _lean_word = "YÜKSELİŞ (LONG)" if orig_dir == "LONG" else "DÜŞÜŞ (SHORT)"
-                leaning_html = (f'<div class="ai-lean-line" style="margin-top:8px; font-size:12px; color:#5f7d7a;">'
-                                 f"🔎 AI'nin Ham Eğilimi: <b style=\"color:{_lean_color};\">{_lean_word}</b> yönünde "
-                                 f'<b style="color:{_lean_color};">%{conf_pct:.1f}</b> emin — güvenlik filtresi tarafından iptal edildi</div>')
+                _orig_neutral = confluence.get("original_prob_neutral_raw", 0.0)
+                _orig_long_raw = confluence.get("original_prob_long_raw", 0.0)
+                _orig_short_raw = confluence.get("original_prob_short_raw", 0.0)
+                _orig_leader_raw = _orig_long_raw if orig_dir == "LONG" else _orig_short_raw
+                if _orig_leader_raw > _orig_neutral:
+                    # Model GERCEKTEN bir yone meyilli (NÖTR sinifindan daha olasi).
+                    _lean_color = "#16a34a" if orig_dir == "LONG" else "#dc2626"
+                    _lean_word = "YÜKSELİŞ (LONG)" if orig_dir == "LONG" else "DÜŞÜŞ (SHORT)"
+                    leaning_html = (f'<div class="ai-lean-line" style="margin-top:8px; font-size:12px; color:#5f7d7a;">'
+                                     f"🔎 AI'nin Ham Eğilimi: <b style=\"color:{_lean_color};\">{_lean_word}</b> yönünde "
+                                     f'<b style="color:{_lean_color};">%{conf_pct:.1f}</b> emin — güvenlik filtresi tarafından iptal edildi</div>')
+                else:
+                    # ONEMLI - KULLANICI GERI BILDIRIMI (Canlı Gösterge'deki AYNI duzeltme):
+                    # bu model de 3 sinifli (LONG/SHORT/NÖTR) egitiliyor ama LONG/SHORT
+                    # olasiliklari NÖTR sinifi atilarak 100'e tamamlaniyordu - bu da model
+                    # aslinda "buyuk ihtimalle hicbir sey olmayacak" dese bile ekranda
+                    # yapay olarak kararli bir yon gibi gorunmesine yol aciyordu. Ham
+                    # (normalize edilmemis) uc olasilik da acikca gosteriliyor.
+                    leaning_html = (f'<div class="ai-lean-line" style="margin-top:8px; font-size:12px; color:#5f7d7a;">'
+                                     f"🔎 AI net bir yön göremiyor: LONG <b>%{_orig_long_raw:.1f}</b> "
+                                     f"| SHORT <b>%{_orig_short_raw:.1f}</b> "
+                                     f"| Nötr/Belirsiz <b>%{_orig_neutral:.1f}</b> "
+                                     f"— modelin kendisi büyük ihtimalle net bir hareket beklemiyor</div>")
 
             # ONEMLI - "HAM HTML METIN OLARAK GORUNUYOR" HATASI: {leaning_html} bos string
             # oldugunda (cogu zaman, sinyal ONAYLI iken) o satir SADECE BOSLUK kalıyordu.
