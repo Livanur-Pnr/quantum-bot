@@ -1215,15 +1215,21 @@ def main():
                 _lean_color = "#22ab94" if original_ml_dir == "LONG" else "#f7525f"
                 _lean_word = "YÜKSELİŞ (LONG)" if original_ml_dir == "LONG" else "DÜŞÜŞ (SHORT)"
                 _lean_reason = ("veri çelişkisi nedeniyle" if live_dir == "BEKLE" else "makro trend filtresi tarafından")
-                _lean_html = f'''<p style="color:#5f7d7a; font-size:0.85rem; margin:6px 0 0 0;">
-                    🔎 AI'nin Ham Eğilimi: <b style="color:{_lean_color};">{_lean_word}</b> yönünde
-                    <b style="color:{_lean_color};">%{original_ml_prob:.1f}</b> emin — {_lean_reason} iptal edildi</p>'''
-            stat_html = f'''<div class="metric-card" style="border:1px solid rgba(15,43,46,0.10); background:#ffffff; text-align:center; padding: 15px;">
-                <h3 style="color:#5f7d7a; margin:0; font-weight:800; font-size:1.3rem;">{_headline}</h3>
-                <p style="color:#5f7d7a; font-size:1.0rem; margin-top:10px; margin-bottom:5px;">Beklenen Yön: <b style="color:{live_color}">{live_dir}</b> (Güven: %{live_prob:.1f})</p>
-                {_lean_html}
-                {_levels}
-                {stat_sparkline}</div>'''
+                _lean_html = (f'<p style="color:#5f7d7a; font-size:0.85rem; margin:6px 0 0 0;">'
+                              f"🔎 AI'nin Ham Eğilimi: <b style=\"color:{_lean_color};\">{_lean_word}</b> yönünde "
+                              f'<b style="color:{_lean_color};">%{original_ml_prob:.1f}</b> emin — {_lean_reason} iptal edildi</p>')
+            # ONEMLI - "HAM SVG METIN OLARAK GORUNUYOR" HATASININ KOKENI: _levels/_lean_html
+            # bos string oldugunda, cok satirli f-string sablonunda o satir SADECE BOSLUK
+            # birakiyordu. Markdown, HTML blogu icindeki bos bir satiri "ham HTML modundan
+            # cik" sinyali sayip blogun geri kalanini (sparkline SVG'sini) DUZ METIN/KOD
+            # BLOGU olarak render ediyordu. Cozum: tum govdeyi TEK SATIRDA, bos parcalari
+            # ATLAYARAK birlestirmek - hicbir zaman bos bir satir olusmuyor.
+            _body = "".join([
+                f'<h3 style="color:#5f7d7a; margin:0; font-weight:800; font-size:1.3rem;">{_headline}</h3>',
+                f'<p style="color:#5f7d7a; font-size:1.0rem; margin-top:10px; margin-bottom:5px;">Beklenen Yön: <b style="color:{live_color}">{live_dir}</b> (Güven: %{live_prob:.1f})</p>',
+                _lean_html, _levels, stat_sparkline,
+            ])
+            stat_html = f'<div class="metric-card" style="border:1px solid rgba(15,43,46,0.10); background:#ffffff; text-align:center; padding: 15px;">{_body}</div>'
         st.markdown(stat_html, unsafe_allow_html=True)
 
         market_intel.render_market_intel_card(market_bias, reconciled)

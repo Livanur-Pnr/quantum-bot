@@ -2035,25 +2035,25 @@ def render_quantum_terminal():
             if final_sig == "NEUTRAL" and orig_dir in ("LONG", "SHORT"):
                 _lean_color = "#16a34a" if orig_dir == "LONG" else "#dc2626"
                 _lean_word = "YÜKSELİŞ (LONG)" if orig_dir == "LONG" else "DÜŞÜŞ (SHORT)"
-                leaning_html = f'''<div class="ai-lean-line" style="margin-top:8px; font-size:12px; color:#5f7d7a;">
-                    🔎 AI'nin Ham Eğilimi: <b style="color:{_lean_color};">{_lean_word}</b> yönünde
-                    <b style="color:{_lean_color};">%{conf_pct:.1f}</b> emin — güvenlik filtresi tarafından iptal edildi
-                </div>'''
+                leaning_html = (f'<div class="ai-lean-line" style="margin-top:8px; font-size:12px; color:#5f7d7a;">'
+                                 f"🔎 AI'nin Ham Eğilimi: <b style=\"color:{_lean_color};\">{_lean_word}</b> yönünde "
+                                 f'<b style="color:{_lean_color};">%{conf_pct:.1f}</b> emin — güvenlik filtresi tarafından iptal edildi</div>')
 
-            st.markdown(f"""
-            <div class="ai-signal-card {dir_cls}">
-                <div class="ai-signal-label">AI İŞLEM SİNYALİ</div>
-                <div class="ai-signal-title">{confluence['signal_title']} {dir_arrow}</div>
-                <div class="confidence-ring" style="background:{ring_style};">
-                    <div class="confidence-inner">
-                        <div class="confidence-value">%{conf_pct:.0f}</div>
-                        <div class="confidence-label">GÜVEN</div>
-                    </div>
-                </div>
-                <div class="ai-prob-line">LONG: <b style="color:#16a34a;">%{ai_result['prob_long']*100:.1f}</b> &nbsp;|&nbsp; SHORT: <b style="color:#dc2626;">%{ai_result['prob_short']*100:.1f}</b></div>
-                {leaning_html}
-            </div>
-            """, unsafe_allow_html=True)
+            # ONEMLI - "HAM HTML METIN OLARAK GORUNUYOR" HATASI: {leaning_html} bos string
+            # oldugunda (cogu zaman, sinyal ONAYLI iken) o satir SADECE BOSLUK kalıyordu.
+            # Markdown, HTML blogu icindeki bos bir satiri "ham HTML modundan cik" sinyali
+            # sayip sonraki satiri (</div>) DUZ METIN olarak render edebiliyordu. Govde
+            # TEK SATIRDA, bos parcalar ATLANARAK birlestirilir - hicbir zaman bos satir olusmaz.
+            _signal_card_body = "".join([
+                '<div class="ai-signal-label">AI İŞLEM SİNYALİ</div>',
+                f'<div class="ai-signal-title">{confluence["signal_title"]} {dir_arrow}</div>',
+                f'<div class="confidence-ring" style="background:{ring_style};"><div class="confidence-inner">'
+                f'<div class="confidence-value">%{conf_pct:.0f}</div><div class="confidence-label">GÜVEN</div></div></div>',
+                f'<div class="ai-prob-line">LONG: <b style="color:#16a34a;">%{ai_result["prob_long"]*100:.1f}</b> '
+                f'&nbsp;|&nbsp; SHORT: <b style="color:#dc2626;">%{ai_result["prob_short"]*100:.1f}</b></div>',
+                leaning_html,
+            ])
+            st.markdown(f'<div class="ai-signal-card {dir_cls}">{_signal_card_body}</div>', unsafe_allow_html=True)
 
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
