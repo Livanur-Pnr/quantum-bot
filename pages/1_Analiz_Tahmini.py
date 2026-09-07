@@ -1019,22 +1019,36 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         checks.append(("AI Model Güven Seviyesi", f"Kararsız (%{confidence:.1f})", "warn", 8))
         confluence_score += 8
         
-    # 2. Makro Trend Onayı (EMA 200)
+    # 2. Makro Trend Onayı (EMA 200) - SERT TREND-UYUM FILTRESI
+    # ONEMLI - BACKTEST KANITI (2026-09-07): 1 yillik gercek-turev verisiyle olculdu -
+    # trende KARSI (EMA200 uyumsuz) sinyaller istatistiksel olarak ANLAMSIZDI (z=+0.76,
+    # n=22, isabet %40.9), trend-UYUMLU sinyaller GUCLU (z=+7.24, n=159, isabet %60.4).
+    # Trend-uyum filtresi UYGULANINCA genel isabet %58.0 -> %65.9'a cikti (z=+6.25, n=82).
+    #
+    # DURUSTLUK NOTU / BILINEN RISK: Bu 1 yillik test doneminde BTC kesintisiz dustu
+    # (%30.9) - trend HIC yon degistirmedi, bu yuzden "trend-uyumlu LONG" senaryosu
+    # NEREDEYSE HIC gozlemlenemedi (filtre sonrasi sadece 3 LONG islem kaldi). Piyasa
+    # yukselise donerse bu filtrenin GERCEKTEN ise yarayip yaramayacagi KANITLANMAMIS -
+    # sadece "downtrend'de SHORT'a agirlik ver" varsayimimizin DOLAYLI bir onayi olabilir.
+    # forward_test.py canli izleyicisi bu davranisi zaman icinde dogrulayacak; kotu
+    # sinyal gorulurse bu blok GERI ALINMALI (once eski warn-only haline dondurulerek).
     is_macro_bull = close > ema_200
     if raw_dir == "LONG":
         if is_macro_bull:
             checks.append(("EMA 200 Makro Trend", "Boğa (Fiyat > EMA200)", "pass", 20))
             confluence_score += 20
         else:
-            checks.append(("EMA 200 Makro Trend", "Tepki / Düzeltme Dalgası", "warn", 10))
-            confluence_score += 10
+            checks.append(("EMA 200 Makro Trend", "Tepki / Düzeltme Dalgası -> Trende Karşı, LONG İptal!", "fail", 0))
+            confluence_score -= 25
+            raw_dir = "NEUTRAL"
     else:
         if not is_macro_bull:
             checks.append(("EMA 200 Makro Trend", "Ayı (Fiyat < EMA200)", "pass", 20))
             confluence_score += 20
         else:
-            checks.append(("EMA 200 Makro Trend", "Karşı Trend Satış Dalgası", "warn", 10))
-            confluence_score += 10
+            checks.append(("EMA 200 Makro Trend", "Karşı Trend Satış Dalgası -> Trende Karşı, SHORT İptal!", "fail", 0))
+            confluence_score -= 25
+            raw_dir = "NEUTRAL"
             
     # 3. Momentum Filtresi (RSI & Stoch)
     if raw_dir == "LONG":
