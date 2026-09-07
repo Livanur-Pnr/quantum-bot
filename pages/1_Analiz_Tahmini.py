@@ -1596,6 +1596,18 @@ with st.sidebar:
     if selected_from_dropdown != symbol_str:
         symbol_str = selected_from_dropdown
 
+    # ONEMLI - "ENTER ISE YARAMIYOR" HATASININ KOKENI: nihai secilen coin (serbest arama
+    # VEYA asagidaki dropdown'dan) simdiye kadar SADECE yerel degiskene (symbol_str)
+    # yaziliyordu, active_symbol_query'ye HIC yazilmiyordu. Bu yuzden kullanici arama
+    # yapip Enter'a bastiktan (veya dropdown'dan sectikten) SONRA baska herhangi bir
+    # widget'la etkilesime girdiginde text_input yeniden ESKI active_symbol_query
+    # degeriyle (value=session_state.get("active_symbol_query",...)) render ediliyor ve
+    # secim SESSIZCE eski coine geri donuyordu - Enter basmis/secim yapmis gibi
+    # gorunse de kalici olmuyordu. Nihai symbol_str'i buraya geri yazarak sabitleniyor.
+    _resolved_query_form = symbol_str.split("/")[0].split(":")[0] + "USDT"
+    if st.session_state.get("active_symbol_query") != _resolved_query_form:
+        st.session_state["active_symbol_query"] = _resolved_query_form
+
     # COIN SENKRONIZASYONU (devam): bu sayfada nihai olarak secilen coin'i Canlı Gösterge
     # panelinin de okuyacagi ortak degere yaz.
     _p1_base = symbol_str.split("/")[0].split(":")[0]
