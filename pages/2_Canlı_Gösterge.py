@@ -421,6 +421,13 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
     df['macd_hist'] = macd - compute_ema(macd, 9)
     df['macd_hist_slope'] = df['macd_hist'].diff()
     df['dist_ema50'] = (df['close'] - ema50) / ema50 * 100
+    # ONEMLI - BACKTEST ILE DOGRULANMIS TREND FILTRESI (bkz. asagida live_dir sonrasi):
+    # ML ozelligi DEGIL, sadece sinyal suzgeci icin. 365 gunluk 15dk backtest'te (page2'nin
+    # KENDI modeliyle, esik=%50): FILTRESIZ n=1078 %48.9 z=+10.83 -> TAMPONLU(%1) n=193
+    # %62.2 z=+8.50 (edge +28.8 puan). Olgunluk sarti (page1'deki 6sa) BURADA fayda
+    # SAGLAMADI (n=117 %61.5 z=+6.47, tamponlu-tek'ten daha zayif) - bu yuzden EKLENMEDI.
+    ema_200 = compute_ema(df['close'], 200)
+    df['dist_ema_200'] = (df['close'] - ema_200) / (ema_200 + 1e-9)
     df['roc'] = df['close'].pct_change(periods=5) * 100
     df['atr'] = compute_atr(df, 14)
     df['adx'] = compute_adx(df, 14)
@@ -1080,8 +1087,40 @@ def main():
         reconciled = market_intel.reconcile_with_bias(live_dir, live_prob, market_bias)
         live_dir = reconciled["direction"]
         live_prob = reconciled["confidence"]
-        is_long = live_dir == "LONG"
 
+        # EMA200 MAKRO TREND TAMPONU: 365 gunluk 15dk backtest'te (page2'nin KENDI
+        # modeliyle) dogrulandi - bkz. train_and_predict_ai icindeki dist_ema_200 yorumu.
+        # SADECE 15dk icin dogrulandi, bu yuzden sadece 15dk'da uygulaniyor - diger zaman
+        # dilimleri (30m/1h/4h/1d) kendi backtest'i yapilmadan ayni esikle FILTRELENMEZ.
+        TREND_FILTER_BUFFER_PCT = {"15m": 0.01}
+        _buf = TREND_FILTER_BUFFER_PCT.get(tf)
+        if _buf is not None and live_dir in ("LONG", "SHORT"):
+            dist200 = float(stable_row.get("dist_ema_200", 0.0))
+            macro_state = 1 if dist200 > _buf else (-1 if dist200 < -_buf else 0)
+            if (live_dir == "LONG" and macro_state != 1) or (live_dir == "SHORT" and macro_state != -1):
+                live_dir = "NEUTRAL"
+
+        # ANLIK SINYAL DALGALANMASINI ENGELLEME (Hysteresis & Signal Lock) - Analiz
+        # Tahmini panelindeki AYNI mekanizma. Bu fragment run_every=5sn ile yenilendigi
+        # icin bu koruma olmadan yon, dusuk-guvenli bir esik civarinda saniyeler icinde
+        # LONG/SHORT arasinda cirpinabiliyordu.
+        latched_key = f"p2_latched_sig_{symbol}_{tf}"
+        latched_time_key = f"p2_latched_time_{symbol}_{tf}"
+        prev_sig = st.session_state.get(latched_key, live_dir)
+        prev_time = st.session_state.get(latched_time_key, 0)
+        time_elapsed = time.time() - prev_time
+        if prev_sig not in ("NEUTRAL", "BEKLE") and live_dir != prev_sig and live_dir not in ("NEUTRAL", "BEKLE"):
+            if live_prob < 66.0 and time_elapsed < 60:
+                live_dir = prev_sig
+            else:
+                st.session_state[latched_key] = live_dir
+                st.session_state[latched_time_key] = time.time()
+        else:
+            st.session_state[latched_key] = live_dir
+            if latched_time_key not in st.session_state:
+                st.session_state[latched_time_key] = time.time()
+
+        is_long = live_dir == "LONG"
         live_color = "#22ab94" if is_long else ("#f7525f" if live_dir == "SHORT" else "#94a3b8")
         live_tp_dist = clamp_tp_sl_dist(atr * tp_m, last_price, tf, "tp")
         live_sl_dist = clamp_tp_sl_dist(atr * sl_m, last_price, tf, "sl")
@@ -1099,7 +1138,7 @@ def main():
         with c7: st.markdown(f'<div class="metric-card"><h4>🌍 MAKRO (F&G/DXY)</h4><p class="value white">F&G: {int(last["fear_greed"])} | DXY: {last["dxy"]:.2f}</p></div>', unsafe_allow_html=True)
         with c8: st.markdown(f'<div class="metric-card" title="{", ".join(active_features)}"><h4>📊 AKTİF FEATURE</h4><p class="value blue">{len(active_features)} Özellik (Filtreli)</p></div>', unsafe_allow_html=True)
         
-        if live_prob >= ai_threshold:
+        if live_prob >= ai_threshold and live_dir in ("LONG", "SHORT"):
             stat_sparkline = _build_sparkline_svg(df['close'].tail(80).tolist(), line_color=live_color)
             stat_html = f'''<div class="metric-card" style="border:1px solid {live_color}; background:rgba({34 if is_long else 220},{171 if is_long else 38},{148 if is_long else 38},0.08); text-align:center; padding: 20px;">
                 <h2 style="color:{live_color}; margin:0; font-weight:900; font-size:1.8rem;">🚀 SİNYAL ONAYLANDI! ŞİMDİ İŞLEME GİR! ({live_dir})</h2>
@@ -1108,9 +1147,15 @@ def main():
                 {stat_sparkline}</div>'''
         else:
             stat_sparkline = _build_sparkline_svg(df['close'].tail(80).tolist(), line_color=live_color)
-            _headline = ("⛔ BEKLE - Veriler çelişiyor, işleme GİRME."
-                         if live_dir == "BEKLE" else "⏳ İZLEMEDE (Eşik Altı) - Şu an işleme GİRME.")
-            _levels = ("" if live_dir == "BEKLE" else
+            # NEUTRAL: trend filtresi (EMA200 tamponu) ML'in yonunu reddetti - eşik üstünde
+            # olsa bile İŞLEME GİRME uyarısı gösterilmeli, "SİNYAL ONAYLANDI" DEĞİL.
+            if live_dir == "BEKLE":
+                _headline = "⛔ BEKLE - Veriler çelişiyor, işleme GİRME."
+            elif live_dir == "NEUTRAL":
+                _headline = "🛑 NÖTR - Makro Trend Filtresi Sinyali İptal Etti, işleme GİRME."
+            else:
+                _headline = "⏳ İZLEMEDE (Eşik Altı) - Şu an işleme GİRME."
+            _levels = ("" if live_dir in ("BEKLE", "NEUTRAL") else
                        f'<p style="color:#5f7d7a; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p>')
             stat_html = f'''<div class="metric-card" style="border:1px solid rgba(15,43,46,0.10); background:#ffffff; text-align:center; padding: 15px;">
                 <h3 style="color:#5f7d7a; margin:0; font-weight:800; font-size:1.3rem;">{_headline}</h3>
