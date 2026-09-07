@@ -558,7 +558,11 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
     
     return df, 99.9, final_features
 
-def format_price(p): return f"{p:.4f}" if p < 10 else f"{p:.2f}"
+def format_price(p):
+    # ONEMLI - COIN SENKRONIZASYONU SIRASINDA BULUNDU: sabit 4 ondalik, PEPE gibi
+    # mikro-fiyatli coinlerde ($0.000004) "0.0000" olarak yuvarlanip anlamsizlasiyordu.
+    # Analiz Tahmini'ndeki fmt() ile ayni kademeli hassasiyet mantigi kullanildi.
+    return f"{p:.6f}" if p < 1 else (f"{p:.4f}" if p < 10 else f"{p:.2f}")
 
 
 def _build_sparkline_svg(prices, width: int = 500, height: int = 60, line_color: str = "#16a34a") -> str:
@@ -1149,7 +1153,7 @@ def main():
         live_sl = last_price - live_sl_dist if is_long else last_price + live_sl_dist
     
         c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f'<div class="metric-card"><h4>💰 {symbol} FİYAT</h4><p class="value white">${last_price:,.4f}</p></div>', unsafe_allow_html=True)
+        with c1: st.markdown(f'<div class="metric-card"><h4>💰 {symbol} FİYAT</h4><p class="value white">${format_price(last_price)}</p></div>', unsafe_allow_html=True)
         with c2: st.markdown(f'<div class="metric-card"><h4>🟢 CANLI LONG %</h4><p class="value green">%{stable_row["prob_long"]:.1f}</p></div>', unsafe_allow_html=True)
         with c3: st.markdown(f'<div class="metric-card"><h4>🔴 CANLI SHORT %</h4><p class="value red">%{stable_row["prob_short"]:.1f}</p></div>', unsafe_allow_html=True)
             
