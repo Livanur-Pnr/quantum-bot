@@ -1005,7 +1005,28 @@ def main():
         st.markdown("## 🎯 SWING AI AYARLARI")
         selected_exchange_label = st.selectbox("🏦 Borsa Seçimi:", list(SUPPORTED_EXCHANGES.keys()), index=0, help="Tüm piyasa verileri ve analiz seçtiğiniz borsadan çekilir.")
         selected_exchange_id = SUPPORTED_EXCHANGES[selected_exchange_label]
-        symbol = st.selectbox("🪙 Coin", ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"])
+
+        # COIN SENKRONIZASYONU (Analiz Tahmini ile ortak): eger secili coin Analiz
+        # Tahmini panelinde degistirildiyse (shared_coin_base burada son senkronize
+        # edilenden farkli), buraya da yansit. Sadece DISARIDAN gelen degisiklikte
+        # tetiklenir - kullanicinin bu sayfada kendi sectigi coini her rerun'da
+        # ustune yazmaz (bkz. push adimi asagida).
+        _FAV_BASES = ["BTC", "ETH", "SOL", "BNB", "XRP"]
+        _shared_base = st.session_state.get("shared_coin_base")
+        if _shared_base and _shared_base != st.session_state.get("p2_last_synced_shared"):
+            st.session_state["p2_selected_base"] = _shared_base
+            st.session_state["p2_last_synced_shared"] = _shared_base
+        _current_base = st.session_state.get("p2_selected_base", "BTC")
+        _option_bases = _FAV_BASES + ([_current_base] if _current_base not in _FAV_BASES else [])
+        _coin_options = [f"{b}/USDT" for b in _option_bases]
+        _default_idx = _option_bases.index(_current_base) if _current_base in _option_bases else 0
+        symbol = st.selectbox("🪙 Coin", _coin_options, index=_default_idx)
+        _p2_base = symbol.split("/")[0]
+        st.session_state["p2_selected_base"] = _p2_base
+        if st.session_state.get("shared_coin_base") != _p2_base:
+            st.session_state["shared_coin_base"] = _p2_base
+        st.session_state["p2_last_synced_shared"] = _p2_base
+
         tf = st.selectbox("⏱️ Z. Dilimi", ["15m", "30m", "1h", "4h", "1d"], index=0)
         
         with st.expander("🛠️ Kurumsal ML & Risk Parametreleri", expanded=False):

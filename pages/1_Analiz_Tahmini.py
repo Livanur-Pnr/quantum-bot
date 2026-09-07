@@ -1538,6 +1538,15 @@ with st.sidebar:
     if "active_symbol_query" not in st.session_state:
         st.session_state["active_symbol_query"] = "BTCUSDT"
 
+    # COIN SENKRONIZASYONU (Canlı Gösterge ile ortak): eger secili coin Canlı Gösterge
+    # panelinde degistirildiyse (shared_coin_base burada son senkronize edilenden farkli),
+    # buraya da yansit. Sadece DISARIDAN gelen degisiklikte tetiklenir - kullanicinin bu
+    # sayfada kendi yaptigi aramayi HER RERUN'DA ustune yazip bozmaz (bkz. push adimi asagida).
+    _shared_base = st.session_state.get("shared_coin_base")
+    if _shared_base and _shared_base != st.session_state.get("p1_last_synced_shared"):
+        st.session_state["active_symbol_query"] = _shared_base + "USDT"
+        st.session_state["p1_last_synced_shared"] = _shared_base
+
     st.markdown("<div style='margin-bottom:6px; font-size:11px; color:#5f7d7a; font-weight:800; text-transform:uppercase;'>Hızlı Favori Coin Seçimi:</div>", unsafe_allow_html=True)
     fav_row1 = st.columns(2)
     fav_row2 = st.columns(2)
@@ -1586,6 +1595,13 @@ with st.sidebar:
     )
     if selected_from_dropdown != symbol_str:
         symbol_str = selected_from_dropdown
+
+    # COIN SENKRONIZASYONU (devam): bu sayfada nihai olarak secilen coin'i Canlı Gösterge
+    # panelinin de okuyacagi ortak degere yaz.
+    _p1_base = symbol_str.split("/")[0].split(":")[0]
+    if st.session_state.get("shared_coin_base") != _p1_base:
+        st.session_state["shared_coin_base"] = _p1_base
+    st.session_state["p1_last_synced_shared"] = _p1_base
 
     timeframe_map = {
         "1 Dakika (Scalp)": "Min1",
