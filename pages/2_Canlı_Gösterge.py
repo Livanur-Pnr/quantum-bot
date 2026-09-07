@@ -1105,6 +1105,14 @@ def main():
         is_long = stable_row["prob_long"] > stable_row["prob_short"]
         live_prob, live_dir = (stable_row["prob_long"], "LONG") if is_long else (stable_row["prob_short"], "SHORT")
 
+        # ONEMLI - KULLANICI GERI BILDIRIMI (Analiz Tahmini panelindeki AYNI duzeltme):
+        # live_dir asagida ORTAK YON SUZGECU / EMA200 TREND TAMPONU tarafindan NEUTRAL/BEKLE'ye
+        # cekilebiliyor - bu durumda ekranda hangi yonun ne kadar guvenle reddedildigi
+        # belli olmuyordu. Modelin HAM (hicbir filtreden gecmemis) yonu ve guveni burada
+        # sabitleniyor.
+        original_ml_dir = live_dir
+        original_ml_prob = float(live_prob)
+
         # ORTAK YON SUZGECI: ML ciktisi, Analiz Tahmini panelinin de kullandigi AYNI
         # market_intel.compute_market_bias sonucuyla uzlastirilir. Iki panel ayni
         # sembol+zaman diliminde artik asla zit yon gosteremez.
@@ -1182,9 +1190,22 @@ def main():
                 _headline = "⏳ İZLEMEDE (Eşik Altı) - Şu an işleme GİRME."
             _levels = ("" if live_dir in ("BEKLE", "NEUTRAL") else
                        f'<p style="color:#5f7d7a; font-size:0.9rem; margin:0;"><i>Potansiyel Giriş: {format_price(last_price)} &nbsp;|&nbsp; TP: {format_price(live_tp)} &nbsp;|&nbsp; SL: {format_price(live_sl)}</i></p>')
+            # ONEMLI - KULLANICI GERI BILDIRIMI (Analiz Tahmini panelindeki AYNI mantik):
+            # live_dir NEUTRAL/BEKLE oldugunda "Beklenen Yön: NEUTRAL" yazisi hangi yonun
+            # reddedildigini gostermiyordu. Modelin ham (filtre-oncesi) yonu ve guveni
+            # acikca yaziliyor.
+            _lean_html = ""
+            if live_dir in ("NEUTRAL", "BEKLE") and original_ml_dir in ("LONG", "SHORT"):
+                _lean_color = "#22ab94" if original_ml_dir == "LONG" else "#f7525f"
+                _lean_word = "YÜKSELİŞ (LONG)" if original_ml_dir == "LONG" else "DÜŞÜŞ (SHORT)"
+                _lean_reason = ("veri çelişkisi nedeniyle" if live_dir == "BEKLE" else "makro trend filtresi tarafından")
+                _lean_html = f'''<p style="color:#5f7d7a; font-size:0.85rem; margin:6px 0 0 0;">
+                    🔎 AI'nin Ham Eğilimi: <b style="color:{_lean_color};">{_lean_word}</b> yönünde
+                    <b style="color:{_lean_color};">%{original_ml_prob:.1f}</b> emin — {_lean_reason} iptal edildi</p>'''
             stat_html = f'''<div class="metric-card" style="border:1px solid rgba(15,43,46,0.10); background:#ffffff; text-align:center; padding: 15px;">
                 <h3 style="color:#5f7d7a; margin:0; font-weight:800; font-size:1.3rem;">{_headline}</h3>
                 <p style="color:#5f7d7a; font-size:1.0rem; margin-top:10px; margin-bottom:5px;">Beklenen Yön: <b style="color:{live_color}">{live_dir}</b> (Güven: %{live_prob:.1f})</p>
+                {_lean_html}
                 {_levels}
                 {stat_sparkline}</div>'''
         st.markdown(stat_html, unsafe_allow_html=True)
