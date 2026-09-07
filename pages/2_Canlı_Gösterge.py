@@ -1128,6 +1128,14 @@ def main():
         # sabitleniyor.
         original_ml_dir = live_dir
         original_ml_prob = float(live_prob)
+        # ONEMLI - KULLANICI GERI BILDIRIMI: bu model 3 SINIFLI (LONG/SHORT/NÖTR) - prob_long
+        # ve prob_short birbirini TAMAMLAMIYOR (toplamlari genelde 100'un COK altinda kalir,
+        # ornegin LONG %9.7 + SHORT %22.9 = %32.6). Geri kalan (%67.4) modelin KENDISININ
+        # "NÖTR" sinifina verdigi olasilik. Eskiden bu gizli kalıp, LONG/SHORT'tan hangisi
+        # (kucuk de olsa) daha buyukse o "AI'nin eğilimi" diye sunuluyordu - iki kucuk sayiyi
+        # kiyaslamak dogasi geregi kararsiz oldugu icin bu "egilim" saniyeler icinde taraf
+        # degistirebiliyordu. Simdi NÖTR payi da hesaba katiliyor.
+        original_ml_neutral = max(0.0, 100.0 - float(stable_row["prob_long"]) - float(stable_row["prob_short"]))
 
         # ORTAK YON SUZGECI: ML ciktisi, Analiz Tahmini panelinin de kullandigi AYNI
         # market_intel.compute_market_bias sonucuyla uzlastirilir. Iki panel ayni
@@ -1212,12 +1220,26 @@ def main():
             # acikca yaziliyor.
             _lean_html = ""
             if live_dir in ("NEUTRAL", "BEKLE") and original_ml_dir in ("LONG", "SHORT"):
-                _lean_color = "#22ab94" if original_ml_dir == "LONG" else "#f7525f"
-                _lean_word = "YÜKSELİŞ (LONG)" if original_ml_dir == "LONG" else "DÜŞÜŞ (SHORT)"
                 _lean_reason = ("veri çelişkisi nedeniyle" if live_dir == "BEKLE" else "makro trend filtresi tarafından")
-                _lean_html = (f'<p style="color:#5f7d7a; font-size:0.85rem; margin:6px 0 0 0;">'
-                              f"🔎 AI'nin Ham Eğilimi: <b style=\"color:{_lean_color};\">{_lean_word}</b> yönünde "
-                              f'<b style="color:{_lean_color};">%{original_ml_prob:.1f}</b> emin — {_lean_reason} iptal edildi</p>')
+                if original_ml_prob > original_ml_neutral:
+                    # Model GERCEKTEN bir yone meyilli (NÖTR sinifindan daha olasi) - bunu
+                    # yon+guven olarak sun.
+                    _lean_color = "#22ab94" if original_ml_dir == "LONG" else "#f7525f"
+                    _lean_word = "YÜKSELİŞ (LONG)" if original_ml_dir == "LONG" else "DÜŞÜŞ (SHORT)"
+                    _lean_html = (f'<p style="color:#5f7d7a; font-size:0.85rem; margin:6px 0 0 0;">'
+                                  f"🔎 AI'nin Ham Eğilimi: <b style=\"color:{_lean_color};\">{_lean_word}</b> yönünde "
+                                  f'<b style="color:{_lean_color};">%{original_ml_prob:.1f}</b> emin — {_lean_reason} iptal edildi</p>')
+                else:
+                    # ONEMLI - KULLANICI GERI BILDIRIMI: LONG/SHORT'tan hangisi buyukse onu
+                    # "eğilim" diye sunmak yanilticiydi - model 3 sinifli (LONG/SHORT/NÖTR)
+                    # oldugu icin cogu zaman NÖTR sinifi ikisinden de daha olasidir (bkz.
+                    # original_ml_neutral yorumu yukarida). Boyle durumda yon iddia etmek
+                    # yerine gercek durumu (üç olasiligi da) aciklikla gosteriyoruz.
+                    _lean_html = (f'<p style="color:#5f7d7a; font-size:0.85rem; margin:6px 0 0 0;">'
+                                  f"🔎 AI net bir yön göremiyor: LONG <b>%{stable_row['prob_long']:.1f}</b> "
+                                  f"| SHORT <b>%{stable_row['prob_short']:.1f}</b> "
+                                  f"| Nötr/Belirsiz <b>%{original_ml_neutral:.1f}</b> "
+                                  f"— modelin kendisi büyük ihtimalle net bir hareket beklemiyor</p>")
             # ONEMLI - "HAM SVG METIN OLARAK GORUNUYOR" HATASININ KOKENI: _levels/_lean_html
             # bos string oldugunda, cok satirli f-string sablonunda o satir SADECE BOSLUK
             # birakiyordu. Markdown, HTML blogu icindeki bos bir satiri "ham HTML modundan
