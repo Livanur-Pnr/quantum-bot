@@ -378,6 +378,34 @@ TIMEFRAME_RISK_BOUNDS_PCT = {
     "4h":  {"sl_min": 0.01295, "sl_max": 0.01943, "tp_min": 0.01295, "tp_max": 0.01943},
 }
 
+# ONEMLI - BACKTEST ILE DOGRULANMIS (2026-09-08, page2_multi_tf_validation.py):
+# page2'nin KENDI modeliyle 5 zaman diliminin TUMU ayri ayri test edildi (365-800 gunluk
+# gercek veri, esik=%50, hedef=12, TP=2.0xATR/SL=1.0xATR):
+#   15m: FILTRESIZ n=1078 %48.9 z=10.83 -> TAMPONLU(%1) n=193  %62.2 z=8.50  (olgunluk FAYDA SAGLAMADI)
+#   30m: FILTRESIZ n=776  %56.4 z=13.66 -> TAMPON+OLGUNLUK(6sa) n=252 %60.3 z=9.09
+#   1h:  FILTRESIZ n=997  %48.7 z=10.32 -> TAMPON+OLGUNLUK(6sa) n=367 %55.9 z=9.15
+#   4h:  FILTRESIZ n=725  %56.8 z=13.42 -> TAMPON+OLGUNLUK(6sa) n=392 %61.7 z=11.93
+#   1d:  FILTRESIZ n=84   %53.6 z=3.93  EN IYISI - tampon eklendikce isabet DUSUYOR (%52.7->%50.0)
+#        -> 1d BILEREK bu sozlukte YOK, filtre orada hic uygulanmiyor.
+TIMEFRAME_TREND_FILTER = {
+    "15m": {"buffer_pct": 0.01, "min_age_hours": 0.0},
+    "30m": {"buffer_pct": 0.01, "min_age_hours": 6.0},
+    "1h":  {"buffer_pct": 0.01, "min_age_hours": 6.0},
+    "4h":  {"buffer_pct": 0.01, "min_age_hours": 6.0},
+}
+
+def macro_trend_state(dist_ema_200_series: pd.Series, buffer_pct: float, min_age_hours: float):
+    """dist_ema_200 serisinden (DatetimeIndex) trend isareti (-1/0/1) ve "olgunluk" (bool)
+    serilerini hesaplar. Uc bagimsiz cagri noktasinda (gecmis simulasyon, grafik rozeti,
+    canli metin karti) AYNI mantigin kullanildigindan emin olmak icin TEK yerde tanimlandi."""
+    sign = np.where(dist_ema_200_series > buffer_pct, 1, np.where(dist_ema_200_series < -buffer_pct, -1, 0))
+    sign = pd.Series(sign, index=dist_ema_200_series.index)
+    if min_age_hours <= 0:
+        return sign, pd.Series(True, index=dist_ema_200_series.index)
+    start_ts = dist_ema_200_series.index.to_series().where(sign != sign.shift(1)).ffill()
+    age_hours = (dist_ema_200_series.index.to_series() - start_ts).dt.total_seconds() / 3600.0
+    return sign, age_hours >= min_age_hours
+
 def clamp_tp_sl_dist(raw_dist: float, price: float, timeframe: str, kind: str) -> float:
     """raw_dist (ATR*carpan mesafesi), zaman dilimine gore tanimli fiyata orantili sinirin
     disina KESINLIKLE cikamaz. kind: 'tp' veya 'sl'."""
@@ -536,8 +564,13 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
     # kartinda "NÖTR" yazarken grafikte hala "AI SHORT" etiketi gorunuyordu. Grafigin
     # kendi gecmis-veri simulasyonu da ARTIK AYNI trend tamponunu uyguluyor - boylece
     # ikisi tutarli oluyor.
-    _chart_tf_buf = {"15m": 0.01}.get(timeframe)
-    _dist200_arr = df["dist_ema_200"].values if "dist_ema_200" in df.columns else np.zeros(len(df))
+    _tf_trend_cfg = TIMEFRAME_TREND_FILTER.get(timeframe)
+    if _tf_trend_cfg is not None and "dist_ema_200" in df.columns:
+        _trend_sign_arr, _trend_mature_arr = macro_trend_state(
+            df["dist_ema_200"], _tf_trend_cfg["buffer_pct"], _tf_trend_cfg["min_age_hours"])
+        _trend_sign_arr, _trend_mature_arr = _trend_sign_arr.values, _trend_mature_arr.values
+    else:
+        _trend_sign_arr = _trend_mature_arr = None
 
     for i in range(len(df)):
         entered_now = False
@@ -547,9 +580,9 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
 
         if not in_pos and i <= last_closed_idx:
             _macro_ok_long, _macro_ok_short = True, True
-            if _chart_tf_buf is not None:
-                _macro_ok_long = _dist200_arr[i] > _chart_tf_buf
-                _macro_ok_short = _dist200_arr[i] < -_chart_tf_buf
+            if _trend_sign_arr is not None:
+                _macro_ok_long = _trend_sign_arr[i] == 1 and _trend_mature_arr[i]
+                _macro_ok_short = _trend_sign_arr[i] == -1 and _trend_mature_arr[i]
             if df['prob_long'].iloc[i] > (threshold * 100) and _macro_ok_long:
                 in_pos, pos_type, tp, sl = True, 'LONG', df['close'].iloc[i] + tp_dist_arr[i], df['close'].iloc[i] - sl_dist_arr[i]
                 entered_now = True
@@ -965,12 +998,15 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     # kartindaki (render_classic_terminal) EMA200 trend tamponundan HABERSIZDI - metin
     # kartinda "NÖTR" yazarken grafikte hala "CANLI TAHMİN: SHORT" gorunebiliyordu. Ayni
     # tampon burada da uygulanarak ikisi tutarli hale getiriliyor.
-    _chart_badge_buf = {"15m": 0.01}.get(timeframe)
+    _badge_tf_cfg = TIMEFRAME_TREND_FILTER.get(timeframe)
     _chart_trend_rejected = False
-    if _chart_badge_buf is not None:
-        _dist200_last = float(stable_row.get("dist_ema_200", 0.0))
-        _macro_state_last = 1 if _dist200_last > _chart_badge_buf else (-1 if _dist200_last < -_chart_badge_buf else 0)
-        if (is_long and _macro_state_last != 1) or (not is_long and _macro_state_last != -1):
+    if _badge_tf_cfg is not None and "dist_ema_200" in df.columns:
+        _sign_series, _mature_series = macro_trend_state(
+            df["dist_ema_200"], _badge_tf_cfg["buffer_pct"], _badge_tf_cfg["min_age_hours"])
+        _macro_state_last = int(_sign_series.loc[stable_row.name])
+        _mature_last = bool(_mature_series.loc[stable_row.name])
+        if (is_long and not (_macro_state_last == 1 and _mature_last)) or \
+           (not is_long and not (_macro_state_last == -1 and _mature_last)):
             _chart_trend_rejected = True
             color = "#94a3b8"
 
@@ -1174,16 +1210,18 @@ def main():
         live_dir = reconciled["direction"]
         live_prob = reconciled["confidence"]
 
-        # EMA200 MAKRO TREND TAMPONU: 365 gunluk 15dk backtest'te (page2'nin KENDI
-        # modeliyle) dogrulandi - bkz. train_and_predict_ai icindeki dist_ema_200 yorumu.
-        # SADECE 15dk icin dogrulandi, bu yuzden sadece 15dk'da uygulaniyor - diger zaman
-        # dilimleri (30m/1h/4h/1d) kendi backtest'i yapilmadan ayni esikle FILTRELENMEZ.
-        TREND_FILTER_BUFFER_PCT = {"15m": 0.01}
-        _buf = TREND_FILTER_BUFFER_PCT.get(tf)
-        if _buf is not None and live_dir in ("LONG", "SHORT"):
-            dist200 = float(stable_row.get("dist_ema_200", 0.0))
-            macro_state = 1 if dist200 > _buf else (-1 if dist200 < -_buf else 0)
-            if (live_dir == "LONG" and macro_state != 1) or (live_dir == "SHORT" and macro_state != -1):
+        # EMA200 MAKRO TREND TAMPONU: page2_multi_tf_validation.py ile 5 zaman diliminin
+        # TUMU ayri ayri test edildi (bkz. TIMEFRAME_TREND_FILTER tanimindaki yorum,
+        # dosyanin ustlerinde). 1d'de filtre YARDIMCI OLMADIGI (tampon eklendikce isabet
+        # dustugu) icin BILEREK bu sozlukte yok - orada hic filtrelenmez.
+        _live_tf_cfg = TIMEFRAME_TREND_FILTER.get(tf)
+        if _live_tf_cfg is not None and live_dir in ("LONG", "SHORT") and "dist_ema_200" in df.columns:
+            _sign_series, _mature_series = macro_trend_state(
+                df["dist_ema_200"], _live_tf_cfg["buffer_pct"], _live_tf_cfg["min_age_hours"])
+            macro_state = int(_sign_series.loc[stable_row.name])
+            trend_mature = bool(_mature_series.loc[stable_row.name])
+            if (live_dir == "LONG" and not (macro_state == 1 and trend_mature)) or \
+               (live_dir == "SHORT" and not (macro_state == -1 and trend_mature)):
                 live_dir = "NEUTRAL"
 
         # ANLIK SINYAL DALGALANMASINI ENGELLEME (Hysteresis & Signal Lock) - Analiz
