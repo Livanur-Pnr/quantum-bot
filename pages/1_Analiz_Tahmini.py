@@ -2162,30 +2162,39 @@ def render_quantum_terminal():
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
         # 2) KÜÇÜK İSTATİSTİK KARTLARI
-        s1c, s2c, s3c, s4c = st.columns(4)
         b_ratio = depth.get("bid_ratio", 50)
         a_ratio = depth.get("ask_ratio", 50)
         u_chg_val = usdt_dom['usdt_d_change']
         fund_dir_txt = "Uzun Ağırlıkta" if funding_rate > 0 else "Kısa Ağırlıkta"
         u_dir_txt = "Kripto Boğa" if u_chg_val < 0 else "Nakite Kaçış"
 
+        # ONEMLI: st.columns(4) artik KULLANILMIYOR - asagida TEK bir flex HTML
+        # blogu ile 4 karti birlikte gonderiyoruz (bkz. asagidaki performans notu).
+        # 4 bos column context'i olusturup atmak da kendi basina gereksiz delta
+        # mesaji demekti, o yuzden tamamen kaldirildi.
         stat_defs = [
-            (s1c, "#0e7490", "⚡", "Fonlama Oranı", f"%{funding_rate:.4f}", fund_dir_txt, min(abs(funding_rate) * 2000, 100)),
-            (s2c, "#f97316", "⚖️", "Alıcı/Satıcı Baskısı", f"%{b_ratio:.0f} / %{a_ratio:.0f}", depth.get('bias', 'DENGELİ'), b_ratio),
-            (s3c, "#8b5cf6", "🌐", "Dolar Dominansı", f"%{usdt_dom['usdt_d']:.2f}", u_dir_txt, min(usdt_dom['usdt_d'] * 8, 100)),
-            (s4c, "#16a34a", "🚀", "İşlem Gücü Skoru", f"%{risk['trade_power']:.0f}", risk['power_title'], risk['trade_power']),
+            (None, "#0e7490", "⚡", "Fonlama Oranı", f"%{funding_rate:.4f}", fund_dir_txt, min(abs(funding_rate) * 2000, 100)),
+            (None, "#f97316", "⚖️", "Alıcı/Satıcı Baskısı", f"%{b_ratio:.0f} / %{a_ratio:.0f}", depth.get('bias', 'DENGELİ'), b_ratio),
+            (None, "#8b5cf6", "🌐", "Dolar Dominansı", f"%{usdt_dom['usdt_d']:.2f}", u_dir_txt, min(usdt_dom['usdt_d'] * 8, 100)),
+            (None, "#16a34a", "🚀", "İşlem Gücü Skoru", f"%{risk['trade_power']:.0f}", risk['power_title'], risk['trade_power']),
         ]
-        for col, color, icon, label, value, footer, pct in stat_defs:
-            with col:
-                st.markdown(f"""
-                <div class="stat-card">
-                    <div class="stat-icon" style="background:{color};">{icon}</div>
-                    <div class="stat-label">{label}</div>
-                    <div class="stat-value">{value}</div>
-                    <div class="stat-progress-track"><div class="stat-progress-fill" style="width:{pct:.0f}%; background:{color};"></div></div>
-                    <div class="stat-footer"><span>{footer}</span><span>%{pct:.0f}</span></div>
-                </div>
-                """, unsafe_allow_html=True)
+        # ONEMLI - PERFORMANS (2026-09-09, kullanici geri bildirimi: "gorselleri
+        # yayinlamasi yavas"): bu 4 kart eskiden 4 AYRI st.markdown() cagrisiydi
+        # (dongu icinde her sutun kendi HTML'ini gonderiyordu) - her cagri Streamlit
+        # WebSocket'i uzerinden AYRI bir "delta" mesaji ve tarayicida AYRI bir DOM
+        # yama islemi demek. 4'u TEK bir HTML blogunda (CSS flex ile) birlestirilerek
+        # 4 delta/DOM-yama yerine 1 tanesine indirildi - gorsel olarak AYNI cikti,
+        # sadece iletim/render tarafinda daha az round-trip.
+        st.markdown('<div style="display:flex; gap:14px;">' + "".join(
+            f'''<div class="stat-card" style="flex:1;">
+                <div class="stat-icon" style="background:{color};">{icon}</div>
+                <div class="stat-label">{label}</div>
+                <div class="stat-value">{value}</div>
+                <div class="stat-progress-track"><div class="stat-progress-fill" style="width:{pct:.0f}%; background:{color};"></div></div>
+                <div class="stat-footer"><span>{footer}</span><span>%{pct:.0f}</span></div>
+            </div>'''
+            for _, color, icon, label, value, footer, pct in stat_defs
+        ) + '</div>', unsafe_allow_html=True)
 
         st.markdown("<div style='height:14px;'></div>", unsafe_allow_html=True)
 
@@ -2440,8 +2449,6 @@ def render_quantum_terminal():
         </div>
         """, unsafe_allow_html=True)
 
-        ind1, ind2, ind3, ind4, ind5, ind6, ind7 = st.columns(7)
-
         rsi_val = latest_row["rsi"]
         macd_diff_val = latest_row["macd_diff"]
         is_ema_bull = latest_row["ema_9"] > latest_row["ema_21"]
@@ -2453,25 +2460,25 @@ def render_quantum_terminal():
         u_chg = usdt_dom.get("usdt_d_change", 0.0)
 
         indicator_defs = [
-            (ind1, "RSI (14)", f"{rsi_val:.1f}", rsi_val > 50),
-            (ind2, "MACD HİST", f"{macd_diff_val:+.3f}", macd_diff_val > 0),
-            (ind3, "EMA (9/21)", fmt(latest_row['ema_9']), is_ema_bull),
-            (ind4, "EMA 200 MAKRO", fmt(latest_row['ema_200']), is_ema200_bull),
-            (ind5, "STOKASTİK", f"%{stoch_k_val:.1f}", stoch_k_val > stoch_d_val),
-            (ind6, "BOLLİNGER", f"%{bb_pct_val*100:.0f}", bb_pct_val > 0.50),
-            (ind7, "USDT.D", f"%{u_d_val:.2f} {'▼' if u_chg < 0 else '▲'}", u_chg < 0),
+            ("RSI (14)", f"{rsi_val:.1f}", rsi_val > 50),
+            ("MACD HİST", f"{macd_diff_val:+.3f}", macd_diff_val > 0),
+            ("EMA (9/21)", fmt(latest_row['ema_9']), is_ema_bull),
+            ("EMA 200 MAKRO", fmt(latest_row['ema_200']), is_ema200_bull),
+            ("STOKASTİK", f"%{stoch_k_val:.1f}", stoch_k_val > stoch_d_val),
+            ("BOLLİNGER", f"%{bb_pct_val*100:.0f}", bb_pct_val > 0.50),
+            ("USDT.D", f"%{u_d_val:.2f} {'▼' if u_chg < 0 else '▲'}", u_chg < 0),
         ]
-        for col, title, value, is_long in indicator_defs:
-            clr = "#16a34a" if is_long else "#dc2626"
-            dir_txt = "🟢 LONG" if is_long else "🔻 SHORT"
-            with col:
-                st.markdown(f"""
-                <div class="indicator-chip" style="border-top:3px solid {clr};">
-                    <div class="indicator-chip-title">{title}</div>
-                    <div class="indicator-chip-value" style="color:{clr};">{value}</div>
-                    <div class="indicator-chip-dir" style="color:{clr};">{dir_txt}</div>
-                </div>
-                """, unsafe_allow_html=True)
+        # ONEMLI - PERFORMANS: asagidaki gibi 7 AYRI st.markdown() cagrisi yerine
+        # (bkz. Kucuk Istatistik Kartlari'ndaki ayni duzeltme) TEK bir flex HTML
+        # blogu gonderiliyor - 7 delta/DOM-yama yerine 1 tanesi.
+        st.markdown('<div style="display:flex; gap:8px;">' + "".join(
+            f'''<div class="indicator-chip" style="border-top:3px solid {"#16a34a" if is_long else "#dc2626"}; flex:1;">
+                <div class="indicator-chip-title">{title}</div>
+                <div class="indicator-chip-value" style="color:{"#16a34a" if is_long else "#dc2626"};">{value}</div>
+                <div class="indicator-chip-dir" style="color:{"#16a34a" if is_long else "#dc2626"};">{"🟢 LONG" if is_long else "🔻 SHORT"}</div>
+            </div>'''
+            for title, value, is_long in indicator_defs
+        ) + '</div>', unsafe_allow_html=True)
 
     # İşlem Motoru Gecikme Bilgisi
     elapsed_ms = (time.time() - fetch_start) * 1000
