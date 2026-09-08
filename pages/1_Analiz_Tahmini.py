@@ -1058,7 +1058,14 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
     #        test noktasinda MAKSIMUM guven sadece %63.46) - trend filtresi degisikligi
     #        bunu COZMEZ. Mevcut deger (tampon+olgunluk) KORUNDU ama bu bilinen bir
     #        eksiklik - 5dk modu su an pratikte NEREDEYSE HIC sinyal uretmiyor.
-    #   15dk: TAMPON(%1)+OLGUNLUK(6sa) EN IYISI: n=44, isabet %90.9, edge+57.6, z=+8.11
+    #   15dk: ESKI (esik=%62): TAMPON+OLGUNLUK n=44 isabet %90.9 z=+8.11 EN IYISIYDI.
+    #        ONEMLI - 2026-09-08 GUNCELLEME: esik %62->%50'ye cekilince (kullanici
+    #        talebiyle, bkz. page1_threshold_sweep.py) trend filtresi de %50 SABIT
+    #        tutularak YENIDEN olculdu (page1_15m_filter_sweep.py): OLGUNLUK sarti
+    #        artik FAYDA SAGLAMIYOR (isabeti sadece 2.9 puan artirirken islem sayisini
+    #        %35 azaltiyor) - KALDIRILDI. Sadece tampon(%1): n=336 isabet %59.2 z=+10.07
+    #        (Tampon+Olgunluk: n=248 isabet %62.1 z=+9.61 - daha az islem, biraz daha
+    #        yuksek isabet, ama kullanici sikligi tercih etti).
     #   1sa: tampon/olgunluk EKLEMEK ZARAR VERIYOR (isabet %57.8->%55.7 dusuyor) -> KALDIRILDI.
     #        Ham trend (tamponsuz): n=218, isabet %57.8, edge+24.5, z=+7.67
     #   4sa: TAMPON(%1)+OLGUNLUK(6sa) EN IYISI: n=155, isabet %53.5, edge+20.2, z=+5.35
@@ -1073,7 +1080,7 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
     TIMEFRAME_TREND_FILTER = {
         "1m":  {"buffer_pct": 0.0, "min_age_hours": 0.0},
         "5m":  {"buffer_pct": 1.0, "min_age_hours": 6.0},   # bilinen sorun yukarida - trend disi
-        "15m": {"buffer_pct": 1.0, "min_age_hours": 6.0},
+        "15m": {"buffer_pct": 1.0, "min_age_hours": 0.0},
         "1h":  {"buffer_pct": 0.0, "min_age_hours": 0.0},
         "4h":  {"buffer_pct": 1.0, "min_age_hours": 6.0},
     }
