@@ -222,6 +222,13 @@ def fetch_macro_data() -> tuple:
 # sembol formatini ("BASE/USDT:USDT") ve ayni kimlik dogrulama alanlarini kullaniyor.
 SUPPORTED_EXCHANGES = {"MEXC": "mexc", "Binance": "binance"}
 
+@st.cache_resource(show_spinner=False)
+def _get_bias_executor():
+    """market_intel.compute_market_bias() cagrisini veri cekme/egitim bloguyla PARALEL
+    baslatmak icin paylasilan, sureç boyunca tek seferlik kurulan thread havuzu (her 5sn'lik
+    fragment yenilemesinde yeni havuz acilmasin diye cache_resource ile onbelleklendi)."""
+    return concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
 @st.cache_resource(ttl=1800, show_spinner=False)
 def get_public_exchange_client(exchange_id: str = "mexc"):
     """Tek, paylasilan ve piyasa listesi onceden yuklenmis borsa istemcisi. exchange_id'ye gore
@@ -1155,6 +1162,12 @@ def main():
     refresh_rate = 5
     @st.fragment(run_every=refresh_rate)
     def render_classic_terminal():
+        # ONEMLI - PERFORMANS (2026-09-09, Analiz Tahmini panelinde yapilan ayni iyilestirme
+        # buraya da uygulandi): asagida market_intel.compute_market_bias(symbol, tf) daha once
+        # df/egitim tamamlandiktan SONRA (sirayla) cagriliyordu. Ama bu fonksiyon df'e bagli
+        # DEGIL - sadece symbol+tf yeterli. O yuzden veri cekme + egitim bloguyla AYNI ANDA,
+        # arka planda baslatiliyor; sonucu asagida gerektiginde .result() ile alinir.
+        _bias_future = _get_bias_executor().submit(market_intel.compute_market_bias, symbol, tf)
         with st.spinner("Piyasa verileri yükleniyor... (API İstekleri Sıralanıyor)"):
             df_crypto = fetch_crypto_data(selected_exchange_id, symbol, tf, limit=1500)
             if df_crypto.empty:
@@ -1214,7 +1227,10 @@ def main():
         # ORTAK YON SUZGECI: ML ciktisi, Analiz Tahmini panelinin de kullandigi AYNI
         # market_intel.compute_market_bias sonucuyla uzlastirilir. Iki panel ayni
         # sembol+zaman diliminde artik asla zit yon gosteremez.
-        market_bias = market_intel.compute_market_bias(symbol, tf)
+        try:
+            market_bias = _bias_future.result(timeout=15)
+        except Exception:
+            market_bias = market_intel.compute_market_bias(symbol, tf)
         reconciled = market_intel.reconcile_with_bias(live_dir, live_prob, market_bias)
         live_dir = reconciled["direction"]
         live_prob = reconciled["confidence"]
@@ -1260,16 +1276,22 @@ def main():
         live_tp = last_price + live_tp_dist if is_long else last_price - live_tp_dist
         live_sl = last_price - live_sl_dist if is_long else last_price + live_sl_dist
     
-        c1, c2, c3 = st.columns(3)
-        with c1: st.markdown(f'<div class="metric-card"><h4>💰 {symbol} FİYAT</h4><p class="value white">${format_price(last_price)}</p></div>', unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="metric-card"><h4>🟢 CANLI LONG %</h4><p class="value green">%{stable_row["prob_long"]:.1f}</p></div>', unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="metric-card"><h4>🔴 CANLI SHORT %</h4><p class="value red">%{stable_row["prob_short"]:.1f}</p></div>', unsafe_allow_html=True)
-            
-        c5, c6, c7, c8 = st.columns(4)
-        with c5: st.markdown(f'<div class="metric-card"><h4>🧠 Eğitim Seti Doğruluğu</h4><p class="value blue">%{train_acc:.1f}</p></div>', unsafe_allow_html=True)
-        with c6: st.markdown(f'<div class="metric-card"><h4>⚖️ TAHTA BASKISI</h4><p class="value white">{"ALICI (Bids)" if last["ob_imbalance"] > 1 else "SATICI (Asks)"}</p></div>', unsafe_allow_html=True)
-        with c7: st.markdown(f'<div class="metric-card"><h4>🌍 MAKRO (F&G/DXY)</h4><p class="value white">F&G: {int(last["fear_greed"])} | DXY: {last["dxy"]:.2f}</p></div>', unsafe_allow_html=True)
-        with c8: st.markdown(f'<div class="metric-card" title="{", ".join(active_features)}"><h4>📊 AKTİF FEATURE</h4><p class="value blue">{len(active_features)} Özellik (Filtreli)</p></div>', unsafe_allow_html=True)
+        # ONEMLI - PERFORMANS (Analiz Tahmini panelindeki ayni iyilestirme): 7 ayri st.columns +
+        # st.markdown cagrisi 7 ayri WebSocket delta'sina/DOM yamasina donusuyordu. Gorsel sonuc
+        # AYNI kalacak sekilde, her satir TEK bir birlesik flex-HTML markdown cagrisina toplandi.
+        st.markdown(
+            '<div style="display:flex; gap:14px;">'
+            f'<div class="metric-card" style="flex:1;"><h4>💰 {symbol} FİYAT</h4><p class="value white">${format_price(last_price)}</p></div>'
+            f'<div class="metric-card" style="flex:1;"><h4>🟢 CANLI LONG %</h4><p class="value green">%{stable_row["prob_long"]:.1f}</p></div>'
+            f'<div class="metric-card" style="flex:1;"><h4>🔴 CANLI SHORT %</h4><p class="value red">%{stable_row["prob_short"]:.1f}</p></div>'
+            '</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div style="display:flex; gap:14px; margin-top:14px;">'
+            f'<div class="metric-card" style="flex:1;"><h4>🧠 Eğitim Seti Doğruluğu</h4><p class="value blue">%{train_acc:.1f}</p></div>'
+            f'<div class="metric-card" style="flex:1;"><h4>⚖️ TAHTA BASKISI</h4><p class="value white">{"ALICI (Bids)" if last["ob_imbalance"] > 1 else "SATICI (Asks)"}</p></div>'
+            f'<div class="metric-card" style="flex:1;"><h4>🌍 MAKRO (F&G/DXY)</h4><p class="value white">F&G: {int(last["fear_greed"])} | DXY: {last["dxy"]:.2f}</p></div>'
+            f'<div class="metric-card" style="flex:1;" title="{", ".join(active_features)}"><h4>📊 AKTİF FEATURE</h4><p class="value blue">{len(active_features)} Özellik (Filtreli)</p></div>'
+            '</div>', unsafe_allow_html=True)
         
         if live_prob >= ai_threshold and live_dir in ("LONG", "SHORT"):
             stat_sparkline = _build_sparkline_svg(df['close'].tail(80).tolist(), line_color=live_color)
