@@ -1753,10 +1753,37 @@ def render_quantum_terminal():
     fetch_start = time.time()
     
     # 1. Gerçek Borsa Vadeli İşlemler ve Dolar Dominansı Verisi Çekme
-    df_raw = fetch_binance_kline_data(symbol_str, interval=active_interval, limit=350, exchange_id=selected_exchange_id)
-    ticker = fetch_binance_ticker_details(symbol_str, exchange_id=selected_exchange_id)
-    depth = fetch_binance_depth_imbalance(symbol_str, exchange_id=selected_exchange_id)
-    usdt_dom = fetch_usdt_dominance_matrix()
+    # ONEMLI - PERFORMANS (2026-09-09, kullanici geri bildirimi: "coin/zaman dilimi
+    # degistirince sayfa cok uzun surede aciliyor"): bu ~7 cagri birbirinden BAGIMSIZ
+    # (farkli borsa/API uc noktalarina gidiyor) ama eskiden SIRAYLA (blocking)
+    # calisiyordu - cache miss durumunda (yeni coin/tf secildiginde HER ZAMAN cache
+    # miss olur, cunku cache anahtari symbol+interval icerir) toplam sure hepsinin
+    # TOPLAMI kadar suruyordu (5-15+ saniye). fetch_macro_data'daki (yukarida, satir
+    # ~120) AYNI ThreadPoolExecutor deseniyle paralellestirildi - artik toplam sure
+    # EN YAVAS tekil cagri kadar (genelde tek bir cagrinin suresi, digerleri onunla
+    # AYNI ANDA tamamlanir).
+    with concurrent.futures.ThreadPoolExecutor(max_workers=7) as _executor:
+        _f_df_raw = _executor.submit(fetch_binance_kline_data, symbol_str, interval=active_interval, limit=350, exchange_id=selected_exchange_id)
+        _f_ticker = _executor.submit(fetch_binance_ticker_details, symbol_str, exchange_id=selected_exchange_id)
+        _f_depth = _executor.submit(fetch_binance_depth_imbalance, symbol_str, exchange_id=selected_exchange_id)
+        _f_usdt_dom = _executor.submit(fetch_usdt_dominance_matrix)
+        _f_macro_tf = _executor.submit(compute_macro_timeframe_trend, symbol_str, exchange_id=selected_exchange_id)
+        _f_ai_4h = _executor.submit(compute_4h_scalp_prediction, symbol_str, exchange_id=selected_exchange_id)
+        _f_market_bias = _executor.submit(market_intel.compute_market_bias, symbol_str, active_interval)
+
+        df_raw = _f_df_raw.result()
+        try: ticker = _f_ticker.result()
+        except Exception: ticker = {}
+        try: depth = _f_depth.result()
+        except Exception: depth = {}
+        try: usdt_dom = _f_usdt_dom.result()
+        except Exception: usdt_dom = {}
+        try: macro_tf = _f_macro_tf.result()
+        except Exception: macro_tf = {}
+        try: ai_4h_pred = _f_ai_4h.result()
+        except Exception: ai_4h_pred = {}
+        try: market_bias = _f_market_bias.result()
+        except Exception: market_bias = None
 
     if df_raw.empty or len(df_raw) < 50:
         st.error(f" '{symbol_str}' ({user_query}) için {selected_exchange_label} Vadeli İşlemler mum verisi alınamadı! Lütfen sembolü kontrol edin.")
@@ -1768,8 +1795,13 @@ def render_quantum_terminal():
     low_24h = ticker.get("lower24Price", df_raw['low'].min())
     funding_rate = ticker.get("fundingRate", 0.0)
 
-    # 2. Özellik Mühendisliği (Sembol ve Zaman Dilimi Geçildi)
-    df_features = compute_quantum_features(df_raw, symbol=symbol_str, interval=active_interval, exchange_id=selected_exchange_id)
+    # 2. Özellik Mühendisliği + Statik S/R (df_raw'a bagli, birbirinden BAGIMSIZ - paralel)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as _executor2:
+        _f_features = _executor2.submit(compute_quantum_features, df_raw, symbol=symbol_str, interval=active_interval, exchange_id=selected_exchange_id)
+        _f_sr = _executor2.submit(compute_macro_support_resistance_levels, df_raw, symbol_str, exchange_id=selected_exchange_id)
+        df_features = _f_features.result()
+        try: sr_levels = _f_sr.result()
+        except Exception: sr_levels = {}
 
     # ONEMLI - BACKTEST KANITI (2026-09-07, TREND OLGUNLUGU FILTRESI): Ayni 1 yillik
     # veriyle olculdu - trend REJIMI (EMA200 tamponu) YENI degistiyse (henuz birkac
@@ -1799,15 +1831,13 @@ def render_quantum_terminal():
     # 3. Yapay Zeka Modeli Eğitimi ve Olasılık Tahmini
     ai_result = train_and_predict_quantum_ai(df_features)
 
-    # 3.1. Uzun Vadeli Statik Destek/Direnç Seviyeleri, Makro Trend, 4H Tahmin ve Likidasyon Taraması
-    sr_levels = compute_macro_support_resistance_levels(df_raw, symbol_str, exchange_id=selected_exchange_id)
-    macro_tf = compute_macro_timeframe_trend(symbol_str, exchange_id=selected_exchange_id)
-    ai_4h_pred = compute_4h_scalp_prediction(symbol_str, exchange_id=selected_exchange_id)
+    # 3.1. Likidasyon Taraması (yukarida paralel cekilen df_raw/current_price'a bagli, yerel/hizli)
     liq_matrix = compute_liquidation_clusters(df_raw, current_price)
-    
+
     # 4. Sahte Sinyal Filtresi ve Confluence Değerlendirmesi (USDT Dominance + Majör S/R Entegre)
     # ORTAK PIYASA YONU: Canli Gosterge paneliyle BIREBIR ayni fonksiyon/veri kaynagi.
-    market_bias = market_intel.compute_market_bias(symbol_str, active_interval)
+    # (macro_tf, ai_4h_pred, market_bias, sr_levels artik yukarida PARALEL cekildi -
+    # burada TEKRAR cagirmiyoruz, ayni sonucu ikinci kez network'ten cekmek gereksizdi.)
     confluence = evaluate_confluence_and_filter(ai_result, latest_row, depth, usdt_dom, sr_levels, market_bias, interval=INTERVAL_MAP.get(active_interval, "1m"))
     
     # 4.1. Anlık Sinyal Dalgalanmasını Engelleme (Hysteresis & Signal Lock Engine)
