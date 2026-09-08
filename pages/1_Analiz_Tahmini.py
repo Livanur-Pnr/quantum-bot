@@ -1030,10 +1030,16 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
     confluence_score = 0
     
     # 1. AI Güven Filtresi
-    if confidence >= 62.0:
+    # ONEMLI - KULLANICI TALEBIYLE 2026-09-08: guven kademeleri 12 puan asagi cekildi
+    # (62/58/51 -> 50/46/40), page1_threshold_sweep.py backtest kanitiyla (352 gunluk
+    # 15dk, tampon+olgunluk trend filtresi SABIT): esik %62'de n=44 (~8 gunde 1 islem)
+    # isabet %90.9; %50'de n=248 (~1.4 gunde 1 islem, 5.6 KAT daha sik) isabet %62.1
+    # (basabasin 28.8 puan ustunde, z=+9.61 - hala cok guclu). Kullanici bilinçli
+    # olarak "az ama efsanevi" yerine "yeterince guvenilir ama daha sik" secti.
+    if confidence >= 50.0:
         checks.append(("AI Model Güven Seviyesi", f"Yüksek (%{confidence:.1f})", "pass", 25))
         confluence_score += 25
-    elif confidence >= 51.0:
+    elif confidence >= 40.0:
         checks.append(("AI Model Güven Seviyesi", f"Aktif / Kararlı (%{confidence:.1f})", "pass", 18))
         confluence_score += 18
     else:
@@ -1215,7 +1221,7 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
                 confluence_score += 6
 
     # NİHAİ KARAR MATRİSİ
-    if confluence_score < 38 and confidence < 51.0:
+    if confluence_score < 38 and confidence < 40.0:
         final_signal = "NEUTRAL"
         signal_title = "🛑 NÖTR / BEKLE (YATAY PİYASA)"
         badge_class = "signal-badge-neutral"
@@ -1232,7 +1238,7 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
         trade_allowed = False
         action_note = "Çapraz doğrulama filtrelerinden biri (ör. Dolar Dominansı) orijinal AI yönünü iptal etti; net bir yön oluşmadı."
     elif raw_dir == "LONG":
-        if confluence_score >= 60 and confidence >= 58.0:
+        if confluence_score >= 60 and confidence >= 46.0:
             final_signal = "STRONG_LONG"
             signal_title = "🚀 GÜÇLÜ LONG (YÜKSEK GÜVEN)"
             badge_class = "signal-badge-strong-long"
@@ -1245,7 +1251,7 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
             trade_allowed = True
             action_note = "Yükseliş yönünde işlem fırsatı mevcut. Kademeli kâr alımı önerilir."
     else:
-        if confluence_score >= 60 and confidence >= 58.0:
+        if confluence_score >= 60 and confidence >= 46.0:
             final_signal = "STRONG_SHORT"
             signal_title = "🔻 GÜÇLÜ SHORT (YÜKSEK GÜVEN)"
             badge_class = "signal-badge-strong-short"
@@ -1277,7 +1283,7 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
             action_note += " " + reconciled["note"]
             # Guven duserse baslik da duser: "GÜÇLÜ ... (YÜKSEK GÜVEN)" etiketi, uzlastirma
             # sonrasi dusuk guvenle celismesin diye yeniden hesaplanir.
-            if final_signal in ("STRONG_LONG", "STRONG_SHORT") and confidence < 58.0:
+            if final_signal in ("STRONG_LONG", "STRONG_SHORT") and confidence < 46.0:
                 if final_signal == "STRONG_LONG":
                     final_signal, signal_title = "WEAK_LONG", "📈 AKTİF LONG POZİSYONU"
                 else:
