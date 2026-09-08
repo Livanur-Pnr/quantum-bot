@@ -1122,8 +1122,17 @@ def main():
             # kombinasyonu tutarli pozitif edge gosterdi (90 gunde n=264 islem, isabet
             # %49.6, basabas %33.3 -> edge +16.3). Kullanici yine de kendi tercihine
             # gore kaydirabilir - bunlar sadece varsayilan baslangic noktasi.
+            # ONEMLI - ESIK 2026-09-08'de %50 -> %40'A DUSURULDU (page2_threshold_sweep.py,
+            # 352 gunluk 15dk onbelleklenmis olasiliklar uzerinde, mevcut %1 trend tamponu
+            # SABIT tutularak): %50'de n=193 (352 gunde, ~2 gunde 1 islem) isabet %62.2 -
+            # kullanici bunun COK SEYREK oldugunu bildirdi ("bugun neredeyse hic sinyal
+            # vermedi"). %40'ta n=906 (~gunde 2.6 islem, %50'ye gore 4.7 KAT) isabet %56.6
+            # (basabas %33.3'un 23.3 puan ustunde, z=+14.87 - mevcut %50 ayarindan (z=8.50)
+            # bile ISTATISTIKSEL OLARAK DAHA GUCLU cunku ornekleme cok daha buyuk). Bu
+            # kalibrasyon SADECE 15dk icin yapildi - kullanici baska bir zaman dilimi
+            # seciyorsa kaydiriciyi kendi degerlendirmesine gore ayarlamasi onerilir.
             target_candles = st.slider("Hedef Süre (Mum)", 8, 50, 12, 1)
-            ai_threshold = st.slider("Güven Eşiği (%)", 50, 95, 50, 1)
+            ai_threshold = st.slider("Güven Eşiği (%)", 35, 95, 40, 1)
             tp_m = st.slider("TP Çarpanı (ATR)", 1.0, 8.0, 2.0, 0.5)
             sl_m = st.slider("SL Çarpanı (ATR)", 0.5, 4.0, 1.0, 0.1)
 
