@@ -530,6 +530,15 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
     # hayalet sinyaller olusmaz.
     last_closed_idx = len(df) - 2
 
+    # ONEMLI - KULLANICI GERI BILDIRIMI: grafikteki "AI LONG/AI SHORT" etiketleri bu ayri
+    # (sadece esik gecisine dayali) simulasyondan geliyordu - asagidaki canli karttaki
+    # (live_dir) EMA200 trend tamponu ve ortak yon suzgecunden HABERSIZDI. Sonuc: metin
+    # kartinda "NÖTR" yazarken grafikte hala "AI SHORT" etiketi gorunuyordu. Grafigin
+    # kendi gecmis-veri simulasyonu da ARTIK AYNI trend tamponunu uyguluyor - boylece
+    # ikisi tutarli oluyor.
+    _chart_tf_buf = {"15m": 0.01}.get(timeframe)
+    _dist200_arr = df["dist_ema_200"].values if "dist_ema_200" in df.columns else np.zeros(len(df))
+
     for i in range(len(df)):
         entered_now = False
         if in_pos:
@@ -537,10 +546,14 @@ def train_and_predict_ai(df: pd.DataFrame, target_candles: int, threshold: float
             elif pos_type == 'SHORT' and (df['high'].iloc[i] >= sl or df['low'].iloc[i] <= tp): in_pos = False
 
         if not in_pos and i <= last_closed_idx:
-            if df['prob_long'].iloc[i] > (threshold * 100):
+            _macro_ok_long, _macro_ok_short = True, True
+            if _chart_tf_buf is not None:
+                _macro_ok_long = _dist200_arr[i] > _chart_tf_buf
+                _macro_ok_short = _dist200_arr[i] < -_chart_tf_buf
+            if df['prob_long'].iloc[i] > (threshold * 100) and _macro_ok_long:
                 in_pos, pos_type, tp, sl = True, 'LONG', df['close'].iloc[i] + tp_dist_arr[i], df['close'].iloc[i] - sl_dist_arr[i]
                 entered_now = True
-            elif df['prob_short'].iloc[i] > (threshold * 100):
+            elif df['prob_short'].iloc[i] > (threshold * 100) and _macro_ok_short:
                 in_pos, pos_type, tp, sl = True, 'SHORT', df['close'].iloc[i] - tp_dist_arr[i], df['close'].iloc[i] + sl_dist_arr[i]
                 entered_now = True
 
@@ -948,6 +961,19 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     color = "#22ab94" if is_long else "#f7525f"
     last_price = last['close']
 
+    # ONEMLI - KULLANICI GERI BILDIRIMI: bu rozet ("CANLI TAHMİN/CANLI SİNYAL") ana metin
+    # kartindaki (render_classic_terminal) EMA200 trend tamponundan HABERSIZDI - metin
+    # kartinda "NÖTR" yazarken grafikte hala "CANLI TAHMİN: SHORT" gorunebiliyordu. Ayni
+    # tampon burada da uygulanarak ikisi tutarli hale getiriliyor.
+    _chart_badge_buf = {"15m": 0.01}.get(timeframe)
+    _chart_trend_rejected = False
+    if _chart_badge_buf is not None:
+        _dist200_last = float(stable_row.get("dist_ema_200", 0.0))
+        _macro_state_last = 1 if _dist200_last > _chart_badge_buf else (-1 if _dist200_last < -_chart_badge_buf else 0)
+        if (is_long and _macro_state_last != 1) or (not is_long and _macro_state_last != -1):
+            _chart_trend_rejected = True
+            color = "#94a3b8"
+
     # ONEMLI - REFERANS GORSEL: Kullanicinin referans verdigi borsa (MEXC) grafigindeki gibi,
     # grafigin en ustune son mumun Open/Close/High/Low/Degisim/Hacim bilgisini gosteren bir ust
     # bilgi satiri; grafigin ortasindan gecen kesikli bir "guncel fiyat" cizgisi; ve sag kenarda
@@ -973,7 +999,10 @@ def build_realtime_chart(df: pd.DataFrame, threshold: float, tp_m: float, sl_m: 
     live_tp = last_price + live_tp_dist if is_long else last_price - live_tp_dist
     live_sl = last_price - live_sl_dist if is_long else last_price + live_sl_dist
     
-    if live_prob >= threshold:
+    if _chart_trend_rejected:
+        label_text = f"<b>🛑 NÖTR (Trend Filtresi İptal Etti)</b><br>%{live_prob:.1f}"
+        bg_color, text_color, dash_style, line_width = color, "white", "dot", 1
+    elif live_prob >= threshold:
         label_text = f"<b>⚡ CANLI SİNYAL: {'LONG' if is_long else 'SHORT'}</b><br><b>%{live_prob:.1f} GÜVEN</b>"
         bg_color, text_color, dash_style, line_width = color, "white", "solid", 3
     else:
