@@ -860,9 +860,24 @@ def compute_market_bias(symbol: str, timeframe: str = "15m") -> dict:
 
     Donen 'score' -100 (guclu SHORT) ile +100 (guclu LONG) arasindadir.
     """
-    deriv = fetch_derivatives_matrix(symbol, timeframe)
-    dom = fetch_dominance_matrix()
-    tradfi = fetch_tradfi_risk_regime()
+    # ONEMLI - PERFORMANS (2026-09-09, kullanici geri bildirimi: coin/zaman dilimi
+    # degisince sayfa hala yavas aciliyordu): bu 3 cagri birbirinden BAGIMSIZ ama
+    # SIRAYLA (blocking) calisiyordu. fetch_derivatives_matrix zaten kendi icinde
+    # 7-yollu paralel bir fetch yapiyor (bkz. fetch_exchange_derivatives) - o TEK
+    # BASINA birkac saniye surebiliyor, ustune dom+tradfi'nin de sirayla eklenmesi
+    # bu fonksiyonu (Analiz Tahmini'nin DISARIDAN paralellestirdigi 7 cagridan biri
+    # olmasina RAGMEN) tek basina darbogaz haline getirebiliyordu. Ayni dosyada
+    # zaten kullanilan ThreadPoolExecutor deseniyle paralellestirildi.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as _ex:
+        _f_deriv = _ex.submit(fetch_derivatives_matrix, symbol, timeframe)
+        _f_dom = _ex.submit(fetch_dominance_matrix)
+        _f_tradfi = _ex.submit(fetch_tradfi_risk_regime)
+        try: deriv = _f_deriv.result(timeout=15)
+        except Exception: deriv = {"source": "VERI_YOK", "coin": base_asset(symbol)}
+        try: dom = _f_dom.result(timeout=15)
+        except Exception: dom = {}
+        try: tradfi = _f_tradfi.result(timeout=15)
+        except Exception: tradfi = {}
 
     score = 0.0
     used_weight = 0.0

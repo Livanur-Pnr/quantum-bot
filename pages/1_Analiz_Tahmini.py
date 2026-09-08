@@ -1751,7 +1751,26 @@ if match_info and "💡" in match_info:
 @st.fragment(run_every=refresh_rate)
 def render_quantum_terminal():
     fetch_start = time.time()
-    
+
+    # ONEMLI - KULLANICI GERI BILDIRIMI (2026-09-09): coin/zaman dilimi degistirince
+    # asagidaki hesaplama (~1-10sn, model yeniden egitimi dahil) boyunca ekranda HICBIR
+    # gorsel degisiklik olmuyordu - eski coin/zaman diliminin verisi donmus halde
+    # kalip aninda yeni veriyle degisiyordu. Bu, kullanicinin "tikladigim algilandi mi"
+    # diye tereddut etmesine yol aciyordu. Placeholder ile acik bir yukleniyor mesaji
+    # gosterip, gercek render baslamadan hemen once temizliyoruz - fonksiyonun geri
+    # kalanini yeniden girintilemeye GEREK KALMADAN (with st.spinner ile butun blogu
+    # sarmak ~170 satirin yeniden girintilenmesini gerektirirdi, hata riski yuksekti).
+    # ONEMLI - IKINCI DUZELTME: bu fragment run_every=refresh_rate ile PERIYODIK olarak
+    # da kendiliginden yeniden calisiyor (coin/tf degismese bile) - ilk versiyon mesaji
+    # HER periyodik yenilemede de gosterip sonra hemen gizliyordu, bu da ekranda surekli
+    # goz batan bir "titreme" yaratiyordu. Mesaj artik SADECE coin/zaman dilimi GERCEKTEN
+    # degistiyse gosteriliyor (bir onceki calismada render edilenle simdiki karsilastirilarak).
+    _selection_key = f"{symbol_str}_{active_interval}"
+    _is_new_selection = st.session_state.get("_last_rendered_selection") != _selection_key
+    _loading_ph = st.empty()
+    if _is_new_selection:
+        _loading_ph.info(f"🔄 {symbol_str} | {selected_tf_label} için analiz güncelleniyor…")
+
     # 1. Gerçek Borsa Vadeli İşlemler ve Dolar Dominansı Verisi Çekme
     # ONEMLI - PERFORMANS (2026-09-09, kullanici geri bildirimi: "coin/zaman dilimi
     # degistirince sayfa cok uzun surede aciliyor"): bu ~7 cagri birbirinden BAGIMSIZ
@@ -1786,6 +1805,7 @@ def render_quantum_terminal():
         except Exception: market_bias = None
 
     if df_raw.empty or len(df_raw) < 50:
+        _loading_ph.empty()
         st.error(f" '{symbol_str}' ({user_query}) için {selected_exchange_label} Vadeli İşlemler mum verisi alınamadı! Lütfen sembolü kontrol edin.")
         return
 
@@ -1918,6 +1938,12 @@ def render_quantum_terminal():
             '</svg>',
         ]
         return "".join(svg_parts)
+
+    # Hesaplama bitti, gercek render basliyor - yukleniyor mesajini temizle ve
+    # bu secimi "son render edilen" olarak isaretle (periyodik yenilemelerde
+    # mesajin tekrar tekrar yanip sonmemesi icin).
+    _loading_ph.empty()
+    st.session_state["_last_rendered_selection"] = _selection_key
 
     # Üst Bilgi Rozeti (Seçili Coin / Zaman Dilimi / Kaldıraç / Bütçe)
     st.markdown(f"""
