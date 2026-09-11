@@ -1077,54 +1077,77 @@ def evaluate_confluence_and_filter(ai_res: dict, latest_row: pd.Series, depth_da
     # neredeyse hic gozlemlenemedi. Piyasa yukselise donerse bu esiklerin GERCEKTEN ise
     # yarayip yaramayacagi KANITLANMAMIS. forward_test.py canli izleyicisi zaman icinde
     # dogrulayacak; kotu sinyal gorulurse ilgili zaman dilimi GERI ALINMALI.
+    #
+    # ONEMLI - ACIL DUZELTME (2026-09-11, kullanici kaniti: guclu bir yukselis mumunde
+    # bile sinyal "NOTR (Trend Filtresi Iptal Etti)" olarak goruntulendi): 15dk icin
+    # scratch/page1_trend_filter_cost_analysis.py ile (multitf_15m_probs.parquet, YENIDEN
+    # EGITIM GEREKTIRMEDEN) filtrenin REDDETTIGI sinyallerin GERCEK kazanma oranina
+    # bakildi - sonuc, filtrenin KORUYUCU degil, KARLI islemleri BOGAN bir mekanizma
+    # oldugunu gosterdi:
+    #   FILTRE ONAYLADI (canli davranis): n=336 isabet %59.2 edge+25.9 z=+10.07 (0.95 islem/gun)
+    #   FILTRE REDDETTI (kacirilan):      n=1613 isabet %47.9 edge+14.5 z=+12.38 (basabasin
+    #                                     COK ustunde - yani reddedilenler de KARLI, sadece
+    #                                     biraz daha az karli)
+    #   FILTRE TAMAMEN KALDIRILSA:        n=1949 isabet %49.8 edge+16.5 z=+15.44 (5.5 KAT
+    #                                     daha sik, VE istatistiksel guven filtreliden
+    #                                     bile YUKSEK - orneklem devasa oldugu icin)
+    # Beklenen-deger (R cinsinden, TP=2R/SL=1R) gunluk toplamda: filtreli ~0.74R/gun,
+    # filtresiz ~2.74R/gun - filtre KALDIRILINCA toplam beklenen kazanc ~3.7 KAT artiyor.
+    # (Ayni sonuc page2_trend_filter_cost_analysis.py ile Canlı Gösterge'de de dogrulandi.)
+    # SONUC: 15dk icin EMA200 trend filtresi TAMAMEN KALDIRILDI (asagida "15m": None).
     TIMEFRAME_TREND_FILTER = {
         "1m":  {"buffer_pct": 0.0, "min_age_hours": 0.0},
         "5m":  {"buffer_pct": 1.0, "min_age_hours": 6.0},   # bilinen sorun yukarida - trend disi
-        "15m": {"buffer_pct": 1.0, "min_age_hours": 0.0},
+        "15m": None,   # 2026-09-11: backtest kanitiyla KALDIRILDI, bkz. yorum yukarida
         "1h":  {"buffer_pct": 0.0, "min_age_hours": 0.0},
         "4h":  {"buffer_pct": 1.0, "min_age_hours": 6.0},
     }
     _tf_cfg = TIMEFRAME_TREND_FILTER.get(interval, {"buffer_pct": 1.0, "min_age_hours": 6.0})
-    EMA_TREND_BUFFER_PCT = _tf_cfg["buffer_pct"]
-    MIN_TREND_AGE_HOURS = _tf_cfg["min_age_hours"]
 
-    dist_ema200_pct = (close - ema_200) / (ema_200 + 1e-9) * 100
-    if dist_ema200_pct > EMA_TREND_BUFFER_PCT:
-        macro_trend_state = 1   # net boga
-    elif dist_ema200_pct < -EMA_TREND_BUFFER_PCT:
-        macro_trend_state = -1  # net ayi
-    else:
-        macro_trend_state = 0   # tampon bolgesi - belirsiz, whipsaw riski
+    if _tf_cfg is not None:
+        EMA_TREND_BUFFER_PCT = _tf_cfg["buffer_pct"]
+        MIN_TREND_AGE_HOURS = _tf_cfg["min_age_hours"]
 
-    trend_age_hours = float(latest_row.get("trend_age_hours", 0.0))
-    trend_mature = trend_age_hours >= MIN_TREND_AGE_HOURS
-
-    if raw_dir == "LONG":
-        if macro_trend_state == 1 and trend_mature:
-            checks.append(("EMA 200 Makro Trend", f"Net Boğa, Olgun Trend ({trend_age_hours:.1f}sa, Fiyat EMA200'den %{dist_ema200_pct:.2f} uzakta)", "pass", 20))
-            confluence_score += 20
-        elif macro_trend_state == 1:
-            checks.append(("EMA 200 Makro Trend", f"Boğa Ama Yeni Rejim ({trend_age_hours:.1f}sa < {MIN_TREND_AGE_HOURS}sa) -> Henüz Olgunlaşmadı, LONG İptal!", "fail", 0))
-            confluence_score -= 25
-            raw_dir = "NEUTRAL"
+        dist_ema200_pct = (close - ema_200) / (ema_200 + 1e-9) * 100
+        if dist_ema200_pct > EMA_TREND_BUFFER_PCT:
+            macro_trend_state = 1   # net boga
+        elif dist_ema200_pct < -EMA_TREND_BUFFER_PCT:
+            macro_trend_state = -1  # net ayi
         else:
-            reason = "Tampon Bölgesi (EMA200'e Çok Yakın, Belirsiz)" if macro_trend_state == 0 else "Tepki / Düzeltme Dalgası"
-            checks.append(("EMA 200 Makro Trend", f"{reason} -> Trende Karşı/Belirsiz, LONG İptal!", "fail", 0))
-            confluence_score -= 25
-            raw_dir = "NEUTRAL"
-    else:
-        if macro_trend_state == -1 and trend_mature:
-            checks.append(("EMA 200 Makro Trend", f"Net Ayı, Olgun Trend ({trend_age_hours:.1f}sa, Fiyat EMA200'den %{abs(dist_ema200_pct):.2f} uzakta)", "pass", 20))
-            confluence_score += 20
-        elif macro_trend_state == -1:
-            checks.append(("EMA 200 Makro Trend", f"Ayı Ama Yeni Rejim ({trend_age_hours:.1f}sa < {MIN_TREND_AGE_HOURS}sa) -> Henüz Olgunlaşmadı, SHORT İptal!", "fail", 0))
-            confluence_score -= 25
-            raw_dir = "NEUTRAL"
+            macro_trend_state = 0   # tampon bolgesi - belirsiz, whipsaw riski
+
+        trend_age_hours = float(latest_row.get("trend_age_hours", 0.0))
+        trend_mature = trend_age_hours >= MIN_TREND_AGE_HOURS
+
+        if raw_dir == "LONG":
+            if macro_trend_state == 1 and trend_mature:
+                checks.append(("EMA 200 Makro Trend", f"Net Boğa, Olgun Trend ({trend_age_hours:.1f}sa, Fiyat EMA200'den %{dist_ema200_pct:.2f} uzakta)", "pass", 20))
+                confluence_score += 20
+            elif macro_trend_state == 1:
+                checks.append(("EMA 200 Makro Trend", f"Boğa Ama Yeni Rejim ({trend_age_hours:.1f}sa < {MIN_TREND_AGE_HOURS}sa) -> Henüz Olgunlaşmadı, LONG İptal!", "fail", 0))
+                confluence_score -= 25
+                raw_dir = "NEUTRAL"
+            else:
+                reason = "Tampon Bölgesi (EMA200'e Çok Yakın, Belirsiz)" if macro_trend_state == 0 else "Tepki / Düzeltme Dalgası"
+                checks.append(("EMA 200 Makro Trend", f"{reason} -> Trende Karşı/Belirsiz, LONG İptal!", "fail", 0))
+                confluence_score -= 25
+                raw_dir = "NEUTRAL"
         else:
-            reason = "Tampon Bölgesi (EMA200'e Çok Yakın, Belirsiz)" if macro_trend_state == 0 else "Karşı Trend Satış Dalgası"
-            checks.append(("EMA 200 Makro Trend", f"{reason} -> Trende Karşı/Belirsiz, SHORT İptal!", "fail", 0))
-            confluence_score -= 25
-            raw_dir = "NEUTRAL"
+            if macro_trend_state == -1 and trend_mature:
+                checks.append(("EMA 200 Makro Trend", f"Net Ayı, Olgun Trend ({trend_age_hours:.1f}sa, Fiyat EMA200'den %{abs(dist_ema200_pct):.2f} uzakta)", "pass", 20))
+                confluence_score += 20
+            elif macro_trend_state == -1:
+                checks.append(("EMA 200 Makro Trend", f"Ayı Ama Yeni Rejim ({trend_age_hours:.1f}sa < {MIN_TREND_AGE_HOURS}sa) -> Henüz Olgunlaşmadı, SHORT İptal!", "fail", 0))
+                confluence_score -= 25
+                raw_dir = "NEUTRAL"
+            else:
+                reason = "Tampon Bölgesi (EMA200'e Çok Yakın, Belirsiz)" if macro_trend_state == 0 else "Karşı Trend Satış Dalgası"
+                checks.append(("EMA 200 Makro Trend", f"{reason} -> Trende Karşı/Belirsiz, SHORT İptal!", "fail", 0))
+                confluence_score -= 25
+                raw_dir = "NEUTRAL"
+    else:
+        checks.append(("EMA 200 Makro Trend", "Bu zaman diliminde filtre devre dışı (backtest kanıtı yetersiz/zararlı bulundu)", "warn", 10))
+        confluence_score += 10
             
     # 3. Momentum Filtresi (RSI & Stoch)
     if raw_dir == "LONG":

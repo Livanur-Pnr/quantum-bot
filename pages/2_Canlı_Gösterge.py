@@ -394,8 +394,22 @@ TIMEFRAME_RISK_BOUNDS_PCT = {
 #   4h:  FILTRESIZ n=725  %56.8 z=13.42 -> TAMPON+OLGUNLUK(6sa) n=392 %61.7 z=11.93
 #   1d:  FILTRESIZ n=84   %53.6 z=3.93  EN IYISI - tampon eklendikce isabet DUSUYOR (%52.7->%50.0)
 #        -> 1d BILEREK bu sozlukte YOK, filtre orada hic uygulanmiyor.
+#
+# ONEMLI - ACIL DUZELTME (2026-09-11, kullanici kaniti: guclu bir mumde bile "NOTR
+# (Trend Filtresi Iptal Etti)" goruldu): yukaridaki 2026-09-08 olcumu SADECE tek-basina
+# isabet oranini karsilastirmisti (%62.2 > %48.9 oldugu icin tampon tutuldu). Ama esik
+# sonradan %50->%40'a cekildigi icin durum degisti - scratch/page2_trend_filter_cost_analysis.py
+# ile (page2_15m_probs.parquet, guncel %40 esikle, YENIDEN EGITIM GEREKMEDEN) filtrenin
+# REDDETTIGI sinyaller ayrica olculdu:
+#   FILTRE ONAYLADI (canli davranis): n=906  isabet %56.6 edge+23.3 z=+14.87 (2.57 islem/gun)
+#   FILTRE REDDETTI (kacirilan):      n=4500 isabet %48.2 edge+14.9 z=+21.19 (basabasin COK
+#                                     ustunde - reddedilenler de KARLI, sadece biraz az karli)
+#   FILTRE TAMAMEN KALDIRILSA:        n=5406 isabet %49.6 edge+16.3 z=+25.42 (5.5 KAT daha
+#                                     sik VE istatistiksel guven filtreliden bile YUKSEK)
+# Beklenen-deger (R, TP=2R/SL=1R) gunluk toplamda: filtreli ~1.79R/gun, filtresiz ~7.50R/gun
+# - filtre KALDIRILINCA toplam beklenen kazanc ~4.2 KAT artiyor. 15dk icin filtre KALDIRILDI;
+# diger zaman dilimleri (30m/1h/4h) bu yeni esikle YENIDEN olculmedi, DOKUNULMADI.
 TIMEFRAME_TREND_FILTER = {
-    "15m": {"buffer_pct": 0.01, "min_age_hours": 0.0},
     "30m": {"buffer_pct": 0.01, "min_age_hours": 6.0},
     "1h":  {"buffer_pct": 0.01, "min_age_hours": 6.0},
     "4h":  {"buffer_pct": 0.01, "min_age_hours": 6.0},
